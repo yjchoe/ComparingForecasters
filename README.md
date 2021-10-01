@@ -98,6 +98,10 @@ python plot_comparisons.py -d forecasts/test.csv -p k29_poly3 -q laplace \
   [Howard et al. (2021)](https://doi.org/10.1214/20-AOS1991).
   Appendix C in our paper.
 
+## License
+
+MIT
+
 ## Authors
 
 [YJ Choe](http://yjchoe.github.io/) and 
