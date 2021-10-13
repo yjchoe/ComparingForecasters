@@ -1,6 +1,6 @@
 # ComparingForecasters
 
-Code accompanying our paper, [_Comparing Sequential Forecasters_](#) (to appear on arXiv), 
+Code accompanying our paper, [_Comparing Sequential Forecasters_](https://arxiv.org/abs/2110.00115) (arXiv preprint), 
 where we derive time-uniform, distribution-free, and non-asymptotic 
 confidence sequences (CS), as well as e-processes, 
 for comparing forecasts on sequential data. 
