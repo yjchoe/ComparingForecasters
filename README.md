@@ -1,5 +1,8 @@
 # ComparingForecasters
 
+[![image](https://img.shields.io/pypi/v/comparecast.svg)](https://pypi.org/project/comparecast/)
+[![image](https://img.shields.io/pypi/l/comparecast.svg)](https://pypi.org/project/comparecast/)
+
 Code accompanying our paper, [_Comparing Sequential Forecasters_](https://arxiv.org/abs/2110.00115) (arXiv preprint), 
 where we derive time-uniform, distribution-free, and non-asymptotic 
 confidence sequences (CS), as well as e-processes, 
