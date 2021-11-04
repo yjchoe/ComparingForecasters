@@ -9,12 +9,22 @@ for comparing forecasts on sequential data.
 
 Requires Python 3.7+.
 
+From `pip`:
 ```shell
+pip install --upgrade pip
+pip install --upgrade comparecast
+```
+
+From source:
+```shell
+git clone https://github.com/yjchoe/ComparingForecasters
+cd ComparingForecasters
+
 pip install --upgrade pip
 pip install -e .
 ```
 
-## Downloading Data
+## Data Sources
 
 See [`data/README.md`](data/README.md).
 
