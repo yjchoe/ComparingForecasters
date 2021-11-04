@@ -1,5 +1,8 @@
 # ComparingForecasters
 
+[![image](https://img.shields.io/pypi/v/comparecast.svg)](https://pypi.org/project/comparecast/)
+[![image](https://img.shields.io/pypi/l/comparecast.svg)](https://pypi.org/project/comparecast/)
+
 Code accompanying our paper, [_Comparing Sequential Forecasters_](https://arxiv.org/abs/2110.00115) (arXiv preprint), 
 where we derive time-uniform, distribution-free, and non-asymptotic 
 confidence sequences (CS), as well as e-processes, 
@@ -9,12 +12,22 @@ for comparing forecasts on sequential data.
 
 Requires Python 3.7+.
 
+From `pip`:
 ```shell
+pip install --upgrade pip
+pip install --upgrade comparecast
+```
+
+From source:
+```shell
+git clone https://github.com/yjchoe/ComparingForecasters
+cd ComparingForecasters
+
 pip install --upgrade pip
 pip install -e .
 ```
 
-## Downloading Data
+## Data Sources
 
 See [`data/README.md`](data/README.md).
 
@@ -29,14 +42,13 @@ import comparecast as cc
 data = cc.data_utils.synthetic.get_data("default", size=1000)
 
 # Calculate forecasts
-forecasts = cc.forecast(
-    data, 
-    forecasters=["k29_poly3", "laplace", "always_0.5"],
-)
+forecasters = ["k29_poly3", "laplace", "always_0.5"]
+data = cc.forecast(data, forecasters, out_file="data/test.csv") 
+cc.plot_forecasts(data, forecasters, plots_dir="plots/test")
 
 # Compare forecasts using confidence sequences & e-values
 lcbs, ucbs, evalues = cc.compare_forecasts(
-    forecasts, 
+    data, 
     "k29_poly3", 
     "laplace", 
     scoring_rule="brier", 
@@ -48,7 +60,7 @@ lcbs, ucbs, evalues = cc.compare_forecasts(
 
 # Draw a comparison plot
 results, axes = cc.plot_comparison(
-    forecasts, 
+    data, 
     "k29_poly3", 
     "laplace", 
     scoring_rule="brier", 
