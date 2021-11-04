@@ -149,7 +149,8 @@ def preprocess_mlb_baselines(
             ys, season_starts, forecast_laplace)
         team_data["k29"] = forecast_seasonal(
             ys, season_starts,
-            lambda y, c: forecast_k29(y, ("poly", 3), verbose=False))
+            # baseline c is unused; forecasts within each season
+            lambda y, c: forecast_k29(y, ("rbf", 0.1), verbose=False))
 
         # win probabilities before rescaling
         for baseline in baselines:

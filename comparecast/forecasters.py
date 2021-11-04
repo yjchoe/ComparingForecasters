@@ -42,6 +42,18 @@ def forecast(
     return data
 
 
+def shift_forecasts(
+        ps: ArrayLike,
+        initial_value: float = 0.5,
+) -> np.ndarray:
+    """Forecasts (p_2, ..., p_{T+1}) are made using the data (y_1, ..., y_T),
+    so we shift the forecasts 'forward' to return (p_1, ..., p_T).
+
+    p_1 is determined by initial_value; p_{T+1} is dropped.
+    """
+    return np.insert(np.array(ps)[:-1], 0, initial_value)
+
+
 def forecast_oracle(ys: ArrayLike, slack: float = 0.) -> np.ndarray:
     """The oracle forecaster with slack parameter,
     p_t = y_t * (1 - slack) + (1 - y_t) * slack.
@@ -54,19 +66,21 @@ def forecast_oracle(ys: ArrayLike, slack: float = 0.) -> np.ndarray:
     return (1. - slack) * ys + slack * (1. - ys)
 
 
-def forecast_laplace(ys: ArrayLike, c: float = 1.) -> np.ndarray:
+def forecast_laplace(ys: ArrayLike, c: float = 0.5) -> np.ndarray:
     """p_t = (k + c)/(t + 1), where k is the number of 1's observed so far
     and c is an initial baseline.
 
-    E.g., ys = [0, 1, 1, 0]: ps = [0.5, 0.67, 0.75, 0.6].
+    E.g., ys = [0, 1, 1, 0], c = 0.5: ps = [0.5, 0.25, 0.5, 0.625].
     """
     assert 0. <= c <= 1.
-    return (np.cumsum(ys) + c) / (np.arange(1, len(ys) + 1) + 1)
+    ps = (np.cumsum(ys) + c) / (np.arange(1, len(ys) + 1) + 1)
+    return shift_forecasts(ps, initial_value=c)
 
 
-def forecast_constant(ys: ArrayLike, const: float = 0.5) -> np.ndarray:
+def forecast_constant(ys: ArrayLike, c: float = 0.5) -> np.ndarray:
     """p_t = const, e.g., random, always-zero, and always-one forecasters."""
-    return np.repeat(const, len(ys))
+    ps = np.repeat(c, len(ys))
+    return shift_forecasts(ps, initial_value=c)
 
 
 def interleave(
@@ -105,7 +119,7 @@ def forecast_seasonal(
     for start, end in zip(seasons[:-1], seasons[1:]):
         ps = forecast_fn(ys[start:end], baseline)
         forecasts.append(ps)
-        baseline = (1 - reversion_factor) * 0.5 + reversion_factor * ps[-1]
+        baseline = (1 - reversion_factor) * ps[-1] + reversion_factor * 0.5
     return np.concatenate(forecasts)
 
 
@@ -158,7 +172,7 @@ def forecast_k29(
         p_t = find_root(_bet)
         forecasts.append(p_t)
 
-    return np.array(forecasts)
+    return shift_forecasts(np.array(forecasts))
 
 
 """
