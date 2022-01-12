@@ -14,6 +14,37 @@ from comparecast.confint import confint_lai
 from comparecast import data_utils
 
 
+def compute_true_deltas(
+        ps: np.ndarray,
+        qs: np.ndarray,
+        true_probs: np.ndarray,
+        scoring_rule: str,
+) -> np.ndarray:
+    """Compute true deltas, Delta_t.
+
+    This only works when the true probabilities (r_t) are known.
+    """
+    T = len(ps)
+    times = np.arange(1, T + 1)
+    if scoring_rule == "winkler":
+        score = get_scoring_rule(scoring_rule)
+        true_deltas = np.cumsum(
+            score(ps, qs, true_probs, base_score="brier")
+        ) / times
+    # does not have a linear equivalent, expected score has different form
+    elif scoring_rule == "absolute":
+        expected_score = get_scoring_rule("expected_absolute")
+        true_deltas = np.cumsum(
+            expected_score(ps, true_probs) - expected_score(qs, true_probs)
+        ) / times
+    else:
+        score = get_scoring_rule(scoring_rule)
+        true_deltas = np.cumsum(
+            score(ps, true_probs) - score(qs, true_probs)
+        ) / times
+    return true_deltas
+
+
 def compute_miscoverage(
         data: pd.DataFrame,
         name_p: str,
@@ -42,9 +73,7 @@ def compute_miscoverage(
 
     # True deltas
     score = get_scoring_rule(scoring_rule)
-    true_deltas = np.cumsum(
-        score(ps, true_probs) - score(qs, true_probs)
-    ) / times
+    true_deltas = compute_true_deltas(ps, qs, true_probs, scoring_rule)
 
     # Generate new ys for n_repeats times; predictions are fixed for now
     # miscoverage = at least one miss up to time t (cf. Ville)
@@ -103,9 +132,7 @@ def compute_fder(
 
     # True deltas
     score = get_scoring_rule(scoring_rule)
-    true_deltas = np.cumsum(
-        score(ps, true_probs) - score(qs, true_probs)
-    ) / times
+    true_deltas = compute_true_deltas(ps, qs, true_probs, scoring_rule)
 
     # Generate new ys for n_repeats times; predictions are fixed for now
     fder_cs = np.zeros(T)

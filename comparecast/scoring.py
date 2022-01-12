@@ -10,6 +10,10 @@ higher scores mean better forecasts.
 
 import numpy as np
 
+"""
+Scoring rules: S(p, y) measures the quality of forecast p given outcome y.
+"""
+
 
 def brier_score(ps: np.ndarray, ys: np.ndarray) -> np.ndarray:
     """Computes the pointwise Brier score S(p_t, y_t) = -(p_t - y_t)^2."""
@@ -72,6 +76,27 @@ def winkler_score(
 
 
 """
+*Expected* scoring rules: 
+
+S(p; r) = E_r[S(p, y)] is the expected value of forecast p's score, where 
+the expectation is taken over y ~ r.
+Note that the expected scoring rule is *asymmetric* in general, 
+even when the underlying scoring rule is symmetric.
+*If* a scoring rule has a linear equivalent 
+(brier, spherical, zero-one, logarithmic, and winkler), then S(p; r) = S(p, r), 
+so we can simply plug in r (mean) in place of y in the scoring rule function. 
+"""
+
+
+def expected_absolute_score(ps: np.ndarray, rs: np.ndarray):
+    """Expected absolute score, i.e.,
+
+    S(p; r) = E_r[-|p-y|] = -r(1-p) -(1-r)p = (2p-1)r - p.
+    """
+    return (2 * ps - 1) * rs - ps
+
+
+"""
 Accessing scoring rules
 """
 
@@ -85,6 +110,8 @@ SCORING_RULES = {
     "logarithmic": logarithmic_score,
     "absolute": absolute_score,
     "winkler": winkler_score,
+    # expected scores: only the absolute score has a different form (for now)
+    "expected_absolute": expected_absolute_score,
 }
 
 
