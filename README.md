@@ -81,6 +81,11 @@ python forecast.py -d default -n 1000 -f all \
 # Compare forecasts and plot results
 python plot_comparisons.py -d forecasts/test.csv -p k29_poly3 -q laplace \
     --compare-baselines h acs --plot-width -o plots/test
+    
+# Compare 538 and vegas forecasters
+python plot_comparisons.py -d forecasts/mlb_2010_2019.csv \
+    -p fivethirtyeight -q vegas \
+    --compare-baselines acs --plot-width -o plots/mlb_2010_2019
 ```
 
 ## Experiments

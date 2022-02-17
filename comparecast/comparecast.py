@@ -71,22 +71,22 @@ def compare_forecasts(
             "baseline forecaster for winkler's score must be in range (0, 1)"
         lo, hi = 1 - 2 / q0, 1
     else:
-        # pointwise deltas: delta(p_t, q_t) = S(p_t, y_t) - S(q_t, y_t)
+        # default: pointwise delta(p_t, q_t) = S(p_t, y_t) - S(q_t, y_t)
         pw_deltas = score(ps, ys) - score(qs, ys)
 
     if use_hoeffding:
-        # Theorem 3.1
+        # Theorem 1, Choe and Ramdas (2021)
         lcbs, ucbs = confseq_h(pw_deltas, alpha, lo, hi, **kwargs)
         logging.info(f"{(1 - alpha) * 100:2.0f}% Hoeffding-style CS [T={T}]:"
                      f" ({lcbs[-1]:.5f}, {ucbs[-1]:.5f})")
     elif not use_asymptotic:
-        # Theorem 3.2
+        # Theorem 2, Choe and Ramdas (2021)
         lcbs, ucbs = confseq_eb(pw_deltas, alpha, lo, hi, **kwargs)
         logging.info(f"{(1 - alpha) * 100:2.0f}% CS [T={T}]:"
                      f" ({lcbs[-1]:.5f}, {ucbs[-1]:.5f})")
     else:
-        # Waudby-Smith et al. (2021)
-        lcbs, ucbs = confseq_asymptotic(pw_deltas, alpha, lo, hi, **kwargs)
+        # Theorem 7, Waudby-Smith et al. (2021)
+        lcbs, ucbs = confseq_asymptotic(pw_deltas, alpha, **kwargs)
         logging.info(f"{(1 - alpha) * 100:2.0f}% Asymptotic CS [T={T}]:"
                      f" ({lcbs[-1]:.5f}, {ucbs[-1]:.5f})")
 

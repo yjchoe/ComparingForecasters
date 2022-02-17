@@ -13,6 +13,7 @@ from comparecast.forecasters import *
 from comparecast.kernels import *
 from comparecast.plotting import *
 from comparecast.scoring import *
+from comparecast.utils import *
 
 # data submodules (load as, e.g., `cc.data_utils.synthetic.get_data()`)
 from comparecast import data_utils

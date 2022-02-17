@@ -12,10 +12,12 @@ import pandas as pd
 import seaborn as sns
 
 from comparecast.comparecast import compare_forecasts
-from comparecast.forecasters import FORECASTER_NAMES
+from comparecast.forecasters import FORECASTERS_ALL
 from comparecast.scoring import get_scoring_rule
 from comparecast.confint import confint_lai
-from comparecast.diagnostics import compute_miscoverage, compute_fder
+from comparecast.diagnostics import (
+    compute_true_deltas, compute_miscoverage, compute_fder,
+)
 from comparecast.data_utils.weather import AIRPORTS, LAGS, read_precip_fcs
 
 
@@ -61,7 +63,7 @@ def plot_forecasts(
         Saves a plot to ``{plots_dir}/forecasters.pdf``.
     """
     if "all" in forecasters:
-        forecasters = FORECASTER_NAMES
+        forecasters = [f for f in FORECASTERS_ALL if f in data.columns]
     for name in forecasters:
         assert name in data.columns, (
             f"invalid forecaster name {name}. "
@@ -190,7 +192,6 @@ def plot_comparison(
     ps, qs, ys, times = [
         data[name].values for name in [name_p, name_q, "data", "time"]
     ]
-    score = get_scoring_rule(scoring_rule)
 
     # CS/CI calculations
     confseqs = OrderedDict()
@@ -217,14 +218,7 @@ def plot_comparison(
     else:
         true_probs = None
     if true_probs is not None:
-        if scoring_rule == "winkler":
-            true_deltas = np.cumsum(
-                score(ps, qs, true_probs, base_score="brier")
-            ) / times
-        else:
-            true_deltas = np.cumsum(
-                score(ps, true_probs) - score(qs, true_probs)
-            ) / times
+        true_deltas = compute_true_deltas(ps, qs, true_probs, scoring_rule)
         logging.info(f"True Delta [T={T}]: {true_deltas[-1]:.5f}")
     else:
         true_deltas = None
@@ -248,7 +242,7 @@ def plot_comparison(
 
     # Plot
     n_figures = 1 + (plot_fder or plot_miscoverage) + plot_width
-    figsize = [(8, 5), (12, 5), (16, 5)][n_figures - 1]
+    figsize = [(8, 5), (12, 4), (16, 4)][n_figures - 1]
     i = 0
 
     set_style()
@@ -257,7 +251,7 @@ def plot_comparison(
         axes = [axes]
     xscale = "log" if use_logx else "linear"
     xlim = (10, T) if use_logx else None
-    y_rad = 0.75 * hi if abs(lo) == hi else 0.25 * (hi - lo) / 2
+    y_rad = 0.6 * hi if abs(lo) == hi else 0.25 * (hi - lo) / 2
     ylim = (-y_rad, y_rad)
 
     # Plot 1: confidence sequences & intervals
@@ -436,8 +430,8 @@ def plot_pairwise_comparisons(
             axes[i][j].axhline(color=COLORS["data"], alpha=0.5)
             if "true_probs" in data.columns:
                 true_probs = data["true_probs"].values
-                pw_true_deltas = score(ps, true_probs) - score(qs, true_probs)
-                true_deltas = np.cumsum(pw_true_deltas) / times
+                true_deltas = compute_true_deltas(ps, qs, true_probs,
+                                                  scoring_rule)
                 axes[i][j].plot(times, true_deltas, color=COLORS["true"],
                                 linestyle=LINESTYLES["true"],
                                 label=LABELS["true"])
@@ -482,7 +476,7 @@ def plot_ucbs(
         ucbs: pd.DataFrame,
         style_name: str = PYPLOT_DEFAULT_STYLE,
         palette: List = SEABORN_DEFAULT_PALETTE,
-        save_filename: str = "confseq.pdf",
+        save_filename: str = "confseq_ucbs.pdf",
         **plot_kwargs
 ):
     """Plot the UCBs of multiple confidence sequences across time.
@@ -506,7 +500,7 @@ def plot_ucbs(
     ucbs["Time"] = np.arange(1, len(ucbs) + 1)
     df = ucbs.melt(id_vars=["Time"], value_vars=None,
                    var_name="Method", value_name="UCB")
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(8, 5))
     ax = sns.lineplot(x="Time", y="UCB", hue="Method",
                       palette=palette,
                       data=df)
