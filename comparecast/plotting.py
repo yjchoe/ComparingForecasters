@@ -12,7 +12,7 @@ import pandas as pd
 import seaborn as sns
 
 from comparecast.comparecast import compare_forecasts
-from comparecast.forecasters import FORECASTER_NAMES
+from comparecast.forecasters import FORECASTERS_ALL
 from comparecast.scoring import get_scoring_rule
 from comparecast.confint import confint_lai
 from comparecast.diagnostics import (
@@ -63,7 +63,7 @@ def plot_forecasts(
         Saves a plot to ``{plots_dir}/forecasters.pdf``.
     """
     if "all" in forecasters:
-        forecasters = [f for f in FORECASTER_NAMES if f in data.columns]
+        forecasters = [f for f in FORECASTERS_ALL if f in data.columns]
     for name in forecasters:
         assert name in data.columns, (
             f"invalid forecaster name {name}. "

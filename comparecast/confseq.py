@@ -234,7 +234,7 @@ def confseq_pm_eb(
         lo: float = 0.,
         hi: float = 1.,
         init_mean: float = 0.5,
-        init_var: float = 0.25
+        init_var: float = 0.25,
         **kwargs
 ) -> ConfSeq:
     """Compute the (1-alpha)-confidence sequence given by

@@ -29,7 +29,7 @@ def forecast(
                              "data": np.ndarray(data)})
 
     if "all" in forecasters:
-        forecasters = FORECASTER_NAMES
+        forecasters = FORECASTERS_DEFAULT
 
     logging.info("forecasters:", ", ".join(forecasters))
     for name in forecasters:
@@ -202,13 +202,14 @@ FORECASTERS = OrderedDict({
     "constant_1": lambda ys: forecast_constant(ys, 1.0),
     "random": lambda ys: forecast_random(ys),
 })
-FORECASTER_NAMES = list(FORECASTERS.keys())
-
+FORECASTERS_ALL = list(FORECASTERS.keys())
+FORECASTERS_DEFAULT = ["laplace", "k29_poly3", "k29_rbf0.01",
+                       "constant_0.5", "constant_0", "constant_1", "random"]
 
 def get_forecaster(name: str):
     """Return a forecaster as a function given their name."""
     try:
         return FORECASTERS[name]
     except KeyError:
-        raise KeyError(f"invalid forecaster name {name}, try: "
-                       ", ".join(FORECASTER_NAMES)) from None
+        raise KeyError(f"invalid forecaster name {name}, try one of: "
+                       ", ".join(FORECASTERS_ALL)) from None
