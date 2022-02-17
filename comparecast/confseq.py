@@ -2,10 +2,24 @@
 Confidence sequences for probability forecasts
 """
 
-from typing import Tuple
+from typing import Tuple, NamedTuple
 import numpy as np
 
 from confseq import boundaries
+
+from comparecast.utils import check_bounds, scale, unscale
+
+
+class ConfSeq(NamedTuple):
+    """A confidence sequence type is a pair of numpy arrays containing
+    its LCBs and UCBs.
+
+    Usage:
+        cs = confseq_eb(xs, alpha=0.05, lo=-1, hi=1)
+        width = cs.ucbs - cs.lcbs
+    """
+    lcbs: np.ndarray
+    ucbs: np.ndarray
 
 
 """
@@ -14,21 +28,6 @@ Time-Uniform, Nonparametric, Nonasymptotic Confidence Sequences
 
 These bounds are centered around the sample mean of observations.
 """
-
-
-def _check_xs(
-        xs: np.ndarray,
-        lo: float = 0.,
-        hi: float = 1.,
-):
-    """Check if input array is 1-dimensional and
-    has values within the provided bounds."""
-    assert lo < hi, f"lower bound {lo} must be smaller than upper bound {hi}"
-    assert len(xs.shape) == 1, \
-        f"input array must be 1-dimensional, got shape {xs.shape}"
-    assert np.logical_and(lo <= xs, xs <= hi).all(), \
-        f"input array contains values outside ({lo}, {hi})"
-    return 0
 
 
 def confseq_h(
@@ -43,11 +42,11 @@ def confseq_h(
         c: float = None,
         is_one_sided: bool = False,
         **kwargs
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> ConfSeq:
     """Computes the Hoeffding-style confidence sequences
      for the time-varying mean of a sequence of bounded random variables.
 
-    Corresponds to Theorem 3.1 in our paper.
+    Corresponds to Theorem 1 in Choe and Ramdas (2021).
 
     Args:
         xs: Input sequence of bounded random variables.
@@ -70,7 +69,7 @@ def confseq_h(
     Returns:
         A tuple with the lower and upper confidence bounds.
     """
-    _check_xs(xs, lo, hi)
+    check_bounds(xs, lo, hi)
 
     # Time & sample mean (centers)
     ts = np.arange(1, len(xs) + 1)
@@ -103,7 +102,7 @@ def confseq_h(
             f"boundary_type must be either 'stitching' or 'mixture'"
             f" (given: {boundary_type})"
         )
-    return mus - radii, mus + radii
+    return ConfSeq(mus - radii, mus + radii)
 
 
 def confseq_eb(
@@ -111,23 +110,28 @@ def confseq_eb(
         alpha: float = 0.05,
         lo: float = 0.,
         hi: float = 1.,
+        gammas: np.ndarray = None,
         boundary_type: str = "mixture",
         v_opt: float = 10.,
         s: float = 1.4,
         eta: float = 2.,
         c: float = None,
         **kwargs
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> ConfSeq:
     """Computes the empirical Bernstein confidence sequences
      for the time-varying mean of a sequence of bounded random variables.
 
-    Corresponds to Theorem 3.2 in our paper.
+    Corresponds to Theorem 2 in Choe and Ramdas (2021),
+    as well as Theorem 4 in Howard et al. (2021).
 
     Args:
         xs: Input sequence of bounded random variables.
         alpha: Significance level.
         lo: Lower bound on the input random variables.
         hi: Upper bound on the input random variables.
+        gammas: (optional) A predictable sequence of x's used as centers
+            when computing intrinsic time. Corresponds to gamma in Theorem 2.
+            Defaults to `mean(xs)` shifted back by 1.
         boundary_type: Type of sub-exponential uniform boundary.
             Either ``stitching`` or ``mixture`` (default).
             Note that ``stitching`` can be computed in closed-form but
@@ -144,16 +148,17 @@ def confseq_eb(
     Returns:
         A tuple with the lower and upper confidence bounds.
     """
-    _check_xs(xs, lo, hi)
+    check_bounds(xs, lo, hi)
 
     # Sample mean (centers)
     ts = np.arange(1, len(xs) + 1)
     mus = np.cumsum(xs) / ts
 
     # Sample variance (estimate of intrinsic time)
-    shifted_mus = mus.copy()
-    shifted_mus[1:], shifted_mus[0] = mus[:-1], mus[0]
-    vs = np.maximum(1., np.cumsum((xs - shifted_mus) ** 2))
+    if gammas is None:
+        gammas = mus.copy()
+        gammas[1:], gammas[0] = mus[:-1], mus[0]
+    vs = np.maximum(1., np.cumsum((xs - gammas) ** 2))
 
     # Sub-exponential uniform boundary (scale c)
     c = c if c is not None else hi - lo
@@ -171,7 +176,7 @@ def confseq_eb(
             f"boundary_type must be either 'stitching' or 'mixture'"
             f" (given: {boundary_type})"
         )
-    return mus - radii, mus + radii
+    return ConfSeq(mus - radii, mus + radii)
 
 
 """
@@ -181,25 +186,13 @@ These bounds are centered around a *weighted* mean of observations.
 """
 
 
-def scale(xs: np.ndarray, lo: float = 0., hi: float = 1.):
-    """Scale xs in [lo, hi] to zs in [0, 1] via
-
-    z_t = (x_t - lo) / (hi - lo)."""
-    return (xs - lo) / (hi - lo)
-
-
-def unscale(zs: np.ndarray, lo: float = 0., hi: float = 1.):
-    """Unscale zs in [0, 1] to xs in [lo, hi]."""
-    return lo + (hi - lo) * zs
-
-
 def confseq_pm_h(
         xs: np.ndarray,
         alpha: float = 0.05,
         lo: float = 0.,
         hi: float = 1.,
         **kwargs
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> ConfSeq:
     """Compute the (1-alpha)-confidence sequence given by
     a predictably-mixed Hoeffding process.
 
@@ -208,7 +201,7 @@ def confseq_pm_h(
 
     Returns a tuple of (LCBs, UCBs) for all timesteps.
     """
-    _check_xs(xs, lo, hi)
+    check_bounds(xs, lo, hi)
 
     # Scale to [0, 1]
     zs = scale(xs, lo, hi)
@@ -231,7 +224,7 @@ def confseq_pm_h(
     # Unscale to [lo, hi]
     centers = unscale(centers, lo, hi)
     radii = (hi - lo) * radii
-    return centers - radii, centers + radii
+    return ConfSeq(centers - radii, centers + radii)
 
 
 def confseq_pm_eb(
@@ -240,8 +233,10 @@ def confseq_pm_eb(
         c: float = 0.5,
         lo: float = 0.,
         hi: float = 1.,
+        init_mean: float = 0.5,
+        init_var: float = 0.25
         **kwargs
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> ConfSeq:
     """Compute the (1-alpha)-confidence sequence given by
     a predictably-mixed empirical Bernstein process.
 
@@ -252,7 +247,7 @@ def confseq_pm_eb(
 
     TODO: double-check initial values of lambda_t and mu_t.
     """
-    _check_xs(xs, lo, hi)
+    check_bounds(xs, lo, hi)
     assert 0 < c < 1, f"parameter c must be between 0 and 1 (given: {c})"
 
     # Scale to [0, 1]
@@ -260,8 +255,8 @@ def confseq_pm_eb(
 
     # Get the (recommended) predictable mixture lambda_t's
     t = len(zs)
-    mus = (0.5 + np.cumsum(zs)) / np.arange(2, t + 2)  # 1..t
-    sigmas = (0.25 + np.cumsum((zs - mus) ** 2)) / np.arange(2, t + 2)  # 1..t
+    mus = (init_mean + np.cumsum(zs)) / np.arange(2, t + 2)  # 1..t
+    sigmas = (init_var + np.cumsum((zs - mus) ** 2)) / np.arange(2, t + 2)  # 1..t
     lambdas = np.sqrt(2 * np.log(2. / alpha) / (
             sigmas * np.arange(2, t + 2) * np.log(np.arange(3, t + 3))
     ))  # 2..t+1
@@ -283,7 +278,7 @@ def confseq_pm_eb(
     # Unscale to [lo, hi]
     centers = unscale(centers, lo, hi)
     radii = (hi - lo) * radii
-    return centers - radii, centers + radii
+    return ConfSeq(centers - radii, centers + radii)
 
 
 """
@@ -298,12 +293,11 @@ but they tend to work well in practice.
 def confseq_asymptotic(
         xs: np.ndarray,
         alpha: float = 0.05,
-        lo: float = 0.,
-        hi: float = 1.,
+        gammas: np.ndarray = None,
         t_star: int = None,
         assume_iid: bool = False,
         **kwargs
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> ConfSeq:
     """Compute the asymptotic (1-alpha)-confidence sequence given by
     Waudby-Smith et al. (2021).
 
@@ -311,7 +305,6 @@ def confseq_asymptotic(
     For the non-iid case, we use an upper bound of the variance that works for
     bounded random variables (see Section C.2).
     """
-    _check_xs(xs, lo, hi)
     t = len(xs)
     if t_star is None:
         # heuristic: midpoint in log-scale
@@ -327,9 +320,10 @@ def confseq_asymptotic(
     mus = np.cumsum(xs) / times
 
     # Use sample variance (with running average as centers) for both cases
-    shifted_mus = mus.copy()
-    shifted_mus[1:], shifted_mus[0] = mus[:-1], mus[0]
-    vs = np.maximum(1., np.cumsum((xs - shifted_mus) ** 2)) / times
+    if gammas is None:
+        gammas = mus.copy()
+        gammas[1:], gammas[0] = mus[:-1], mus[0]
+    vs = np.maximum(1., np.cumsum((xs - gammas) ** 2)) / times
     # IID: apply Theorem 1
     if assume_iid:
         radii = np.sqrt(
@@ -338,8 +332,6 @@ def confseq_asymptotic(
         )
     # Non-IID: apply Theorem 6
     else:
-        assert lo < hi
-        # vs = np.repeat((hi - lo) ** 2 / 4, t)  # simple bound; not tight
         radii = np.sqrt(
             2 * (rhosq * times * vs + 1) / (rhosq * times ** 2) *
             np.log(np.sqrt(rhosq * times * vs + 1) / alpha)
@@ -347,4 +339,4 @@ def confseq_asymptotic(
 
     # Radii of the confidence sequence
     centers = mus
-    return centers - radii, centers + radii
+    return ConfSeq(centers - radii, centers + radii)
