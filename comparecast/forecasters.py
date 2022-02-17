@@ -83,6 +83,16 @@ def forecast_constant(ys: ArrayLike, c: float = 0.5) -> np.ndarray:
     return shift_forecasts(ps, initial_value=c)
 
 
+def forecast_random(
+        ys: ArrayLike,
+        u: float = 0.0,
+        rng: np.random.Generator = np.random.default_rng(),
+) -> np.ndarray:
+    """p_t = u or 1-u with equal probability."""
+    ps = rng.uniform(0, 1, len(ys))
+    return (1 - u) * ps + u * (1 - ps)
+
+
 def interleave(
         ps: ArrayLike,
         qs: ArrayLike,
@@ -183,10 +193,14 @@ FORECASTERS = OrderedDict({
     "laplace": lambda ys: forecast_laplace(ys),
     "k29_poly3": lambda ys: forecast_k29(ys, ("poly", 3)),
     "k29_rbf0.01": lambda ys: forecast_k29(ys, ("rbf", 0.01)),
-    # "k29_epa": lambda ys: forecast_k29(ys, ("epa", 2.0)),
+    "k29_epa": lambda ys: forecast_k29(ys, ("epa", 2.0)),
     "always_0.5": lambda ys: forecast_constant(ys, 0.5),
     "always_0": lambda ys: forecast_constant(ys, 0.0),
     "always_1": lambda ys: forecast_constant(ys, 1.0),
+    "constant_0.5": lambda ys: forecast_constant(ys, 0.5),
+    "constant_0": lambda ys: forecast_constant(ys, 0.0),
+    "constant_1": lambda ys: forecast_constant(ys, 1.0),
+    "random": lambda ys: forecast_random(ys),
 })
 FORECASTER_NAMES = list(FORECASTERS.keys())
 

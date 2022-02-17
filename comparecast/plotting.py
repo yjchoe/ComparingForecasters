@@ -63,7 +63,7 @@ def plot_forecasts(
         Saves a plot to ``{plots_dir}/forecasters.pdf``.
     """
     if "all" in forecasters:
-        forecasters = FORECASTER_NAMES
+        forecasters = [f for f in FORECASTER_NAMES if f in data.columns]
     for name in forecasters:
         assert name in data.columns, (
             f"invalid forecaster name {name}. "
@@ -192,7 +192,6 @@ def plot_comparison(
     ps, qs, ys, times = [
         data[name].values for name in [name_p, name_q, "data", "time"]
     ]
-    score = get_scoring_rule(scoring_rule)
 
     # CS/CI calculations
     confseqs = OrderedDict()
@@ -477,7 +476,7 @@ def plot_ucbs(
         ucbs: pd.DataFrame,
         style_name: str = PYPLOT_DEFAULT_STYLE,
         palette: List = SEABORN_DEFAULT_PALETTE,
-        save_filename: str = "confseq.pdf",
+        save_filename: str = "confseq_ucbs.pdf",
         **plot_kwargs
 ):
     """Plot the UCBs of multiple confidence sequences across time.
@@ -501,7 +500,7 @@ def plot_ucbs(
     ucbs["Time"] = np.arange(1, len(ucbs) + 1)
     df = ucbs.melt(id_vars=["Time"], value_vars=None,
                    var_name="Method", value_name="UCB")
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(8, 5))
     ax = sns.lineplot(x="Time", y="UCB", hue="Method",
                       palette=palette,
                       data=df)
