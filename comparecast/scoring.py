@@ -82,13 +82,21 @@ S(p; r) = E_r[S(p, y)] is the expected value of forecast p's score, where
 the expectation is taken over y ~ r.
 Note that the expected scoring rule is *asymmetric* in general, 
 even when the underlying scoring rule is symmetric.
-*If* a scoring rule has a linear equivalent 
-(brier, spherical, zero-one, logarithmic, and winkler), then S(p; r) = S(p, r), 
-so we can simply plug in r (mean) in place of y in the scoring rule function. 
+*If* a scoring rule is linear in y (linear equivalent of brier, 
+spherical, zero-one, logarithmic, and winkler), then S(p; r) = S(p, r),
+so we can simply plug in r (mean) in place of y in the scoring rule function.
 """
 
 
-def expected_absolute_score(ps: np.ndarray, rs: np.ndarray):
+def expected_brier_score(ps: np.ndarray, rs: np.ndarray) -> np.ndarray:
+    """Expected Brier score *if not in its linear equivalent form*.
+
+    S(p; r) = E_r[-(p-y)^2] = -r(1-p)^2 -(1-r)p^2 = 2rp + r - p^2 = (2p-1)r - p^2.
+    """
+    return (2 * ps - 1) * rs - ps ** 2
+
+
+def expected_absolute_score(ps: np.ndarray, rs: np.ndarray) -> np.ndarray:
     """Expected absolute score, i.e.,
 
     S(p; r) = E_r[-|p-y|] = -r(1-p) -(1-r)p = (2p-1)r - p.
@@ -110,15 +118,25 @@ SCORING_RULES = {
     "logarithmic": logarithmic_score,
     "absolute": absolute_score,
     "winkler": winkler_score,
-    # expected scores: only the absolute score has a different form (for now)
+    # expected scores: the following have different forms
+    "expected_brier": expected_brier_score,
+    "expected_quadratic": expected_brier_score,
     "expected_absolute": expected_absolute_score,
 }
 
 
-def get_scoring_rule(name: str):
+def get_scoring_rule(name):
     """Return a scoring rule as a function given its name."""
     try:
         return SCORING_RULES[name]
     except KeyError:
         raise KeyError(f"invalid scoring rule {name}, try: " +
                        ", ".join(SCORING_RULES.keys())) from None
+
+
+def get_expected_scoring_rule(name):
+    """Return the expected scoring rule function of a given scoring rule."""
+    if name in ["brier", "quadratic", "absolute"]:
+        return get_scoring_rule("expected_" + name)
+    else:
+        return get_scoring_rule(name)
