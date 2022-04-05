@@ -7,7 +7,7 @@ from typing import Union, Tuple
 import numpy as np
 import pandas as pd
 
-from comparecast.scoring import get_scoring_rule
+from comparecast.scoring import ScoringRule, get_scoring_rule
 from comparecast.confseq import confseq_h, confseq_eb, confseq_asymptotic
 from comparecast.evalues import evalue_expm
 
@@ -16,10 +16,8 @@ def compare_forecasts(
         data: Union[str, pd.DataFrame],
         name_p: str,
         name_q: str,
-        scoring_rule: str = "brier",
+        scoring_rule: Union[ScoringRule, str] = "brier",
         alpha: float = 0.05,
-        lo: float = -1.,
-        hi: float = 1.,
         use_hoeffding: bool = False,
         use_asymptotic: bool = False,
         compute_evalues: bool = False,
@@ -34,10 +32,9 @@ def compare_forecasts(
             (e.g., output of :py:func:`~comparecast.forecasters.forecast`.)
         name_p: column name of the first forecaster
         name_q: column name of the second forecaster
-        scoring_rule: name of the scoring rule to be used (default: brier)
+        scoring_rule: a :py:obj:`~comparecast.scoring.ScoringRule` object or its name
+            (default: brier)
         alpha: significance level for confidence sequences (default: 0.05)
-        lo: minimum value of score differentials (default: -1)
-        hi: maximum value of score differentials (default: 1)
         use_hoeffding: if True, use the Hoeffding-style CS instead.
             (default: False)
         use_asymptotic: if True, use the asymptotic CS instead.
@@ -57,14 +54,13 @@ def compare_forecasts(
     ps, qs, ys = [
         data[name].values for name in [name_p, name_q, "data"]
     ]
-    score = get_scoring_rule(scoring_rule)
 
+    score = get_scoring_rule(scoring_rule)
     if scoring_rule == "winkler":
         logging.info(
             "computing winkler's score while treating %s as a baseline",
             name_q
         )
-        # TODO: consider non-brier scores for winkler (need bounds)
         pw_deltas = score(ps, qs, ys, base_score="brier")
         q0 = min(min(qs), min(1 - qs))
         assert 0 < q0 < 1, \
@@ -73,6 +69,8 @@ def compare_forecasts(
     else:
         # default: pointwise delta(p_t, q_t) = S(p_t, y_t) - S(q_t, y_t)
         pw_deltas = score(ps, ys) - score(qs, ys)
+        a, b = score.bounds
+        lo, hi = a - b, b - a  # lower/upper bounds on delta(p_t, q_t)
 
     if use_hoeffding:
         # Theorem 1, Choe and Ramdas (2021)
