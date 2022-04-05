@@ -6,11 +6,11 @@ these confidence intervals are *not* valid at an arbitrary stopping time.
 """
 
 import logging
-from typing import Tuple
+from typing import Tuple, Union
 import numpy as np
 import scipy.stats
 
-from comparecast.scoring import get_scoring_rule
+from comparecast.scoring import ScoringRule, get_scoring_rule
 
 
 def confint_lai(
@@ -18,7 +18,7 @@ def confint_lai(
         qs: np.ndarray = None,
         ys: np.ndarray = None,
         true_probs: np.ndarray = None,
-        scoring_rule: str = "brier",
+        scoring_rule: Union[ScoringRule, str] = "brier",
         alpha: float = 0.05,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Non-time-uniform & asymptotic confidence intervals for

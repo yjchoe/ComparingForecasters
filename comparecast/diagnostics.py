@@ -4,13 +4,15 @@ Diagnostic functions for confidence sequences:
 """
 
 import logging
+from typing import Union
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from comparecast.scoring import get_scoring_rule
+from comparecast.scoring import ScoringRule, get_scoring_rule
 from comparecast.confseq import confseq_eb
 from comparecast.confint import confint_lai
+from comparecast.utils import cumul_mean
 from comparecast import data_utils
 
 
@@ -18,30 +20,20 @@ def compute_true_deltas(
         ps: np.ndarray,
         qs: np.ndarray,
         true_probs: np.ndarray,
-        scoring_rule: str,
+        scoring_rule: Union[ScoringRule, str],
 ) -> np.ndarray:
     """Compute true deltas, Delta_t.
 
     This only works when the true probabilities (r_t) are known.
     """
-    T = len(ps)
-    times = np.arange(1, T + 1)
     if scoring_rule == "winkler":
         score = get_scoring_rule(scoring_rule)
-        true_deltas = np.cumsum(
-            score(ps, qs, true_probs, base_score="brier")
-        ) / times
-    # does not have a linear equivalent, expected score has different form
-    elif scoring_rule == "absolute":
-        expected_score = get_scoring_rule("expected_absolute")
-        true_deltas = np.cumsum(
-            expected_score(ps, true_probs) - expected_score(qs, true_probs)
-        ) / times
+        true_deltas = cumul_mean(score(ps, qs, true_probs, base_score="brier"))
     else:
         score = get_scoring_rule(scoring_rule)
-        true_deltas = np.cumsum(
-            score(ps, true_probs) - score(qs, true_probs)
-        ) / times
+        true_deltas = cumul_mean(
+            score.expected_score(ps, true_probs) - score.expected_score(qs, true_probs)
+        )
     return true_deltas
 
 
@@ -52,8 +44,6 @@ def compute_miscoverage(
         n_repeats: int = 10000,
         scoring_rule: str = "brier",
         alpha: float = 0.05,
-        lo: float = -1.,
-        hi: float = 1.,
         boundary_type: str = "stitching",
 ):
     """Compute the cumulative miscoverage rate of
@@ -69,10 +59,13 @@ def compute_miscoverage(
         for name in [name_p, name_q, "data", "true_probs"]
     ]
     T = len(data)
-    times = np.arange(1, T + 1)
+
+    # Scoring rule & bounds
+    score = get_scoring_rule(scoring_rule)
+    a, b = score.bounds
+    lo, hi = a - b, b - a
 
     # True deltas
-    score = get_scoring_rule(scoring_rule)
     true_deltas = compute_true_deltas(ps, qs, true_probs, scoring_rule)
 
     # Generate new ys for n_repeats times; predictions are fixed for now
@@ -108,8 +101,6 @@ def compute_fder(
         n_repeats: int = 10000,
         scoring_rule: str = "brier",
         alpha: float = 0.05,
-        lo: float = -1.,
-        hi: float = 1.,
         boundary_type: str = "stitching",
 ):
     """Compute the false decision rate (FDeR) for
@@ -128,10 +119,13 @@ def compute_fder(
         for name in [name_p, name_q, "data", "true_probs"]
     ]
     T = len(data)
-    times = np.arange(1, T + 1)
+
+    # Scoring rule & bounds
+    score = get_scoring_rule(scoring_rule)
+    a, b = score.bounds
+    lo, hi = a - b, b - a
 
     # True deltas
-    score = get_scoring_rule(scoring_rule)
     true_deltas = compute_true_deltas(ps, qs, true_probs, scoring_rule)
 
     # Generate new ys for n_repeats times; predictions are fixed for now

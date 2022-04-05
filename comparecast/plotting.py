@@ -21,22 +21,31 @@ from comparecast.diagnostics import (
 from comparecast.data_utils.weather import AIRPORTS, LAGS, read_precip_fcs
 
 
-PYPLOT_DEFAULT_STYLE = "seaborn-colorblind"
-SEABORN_DEFAULT_PALETTE = "colorblind"
+DEFAULT_CONTEXT = "paper"
+DEFAULT_STYLE = "whitegrid"
+DEFAULT_PALETTE = "colorblind"
 
 
-def set_style(style_name: str = PYPLOT_DEFAULT_STYLE):
-    """Set default plotting style."""
-    plt.style.use(style_name)
+def set_theme(
+        context: str = DEFAULT_CONTEXT,
+        style: str = DEFAULT_STYLE,
+        palette: str = DEFAULT_PALETTE,
+        **kwargs
+):
+    """Set default plotting style.
+
+    Alias for `seaborn.set_theme()` with different defaults.
+    """
+    return sns.set_theme(context, style, palette, **kwargs)
 
 
-def get_color_by_index(index: int, palette: str = SEABORN_DEFAULT_PALETTE):
+def get_color_by_index(index: int, palette: str = DEFAULT_PALETTE):
     """Get color by integer indices."""
     colors = sns.color_palette(palette)
     return colors[index % len(colors)]
 
 
-def get_colors(palette: str = SEABORN_DEFAULT_PALETTE):
+def get_colors(palette: str = DEFAULT_PALETTE):
     """Get colors defined by a seaborn palette."""
     return sns.color_palette(palette)
 
@@ -46,6 +55,8 @@ def plot_forecasts(
         forecasters: Iterable[str],
         plots_dir: str = "./plots",
         use_logx: bool = True,
+        figsize: Tuple[int, int] = (12, 5),
+        linewidth: float = 2,
 ):
     """Plot forecasts along with the dataset.
 
@@ -58,6 +69,8 @@ def plot_forecasts(
         forecasters: list of forecasters (columns of ``data``) to be plotted.
         plots_dir: directory to save the plots.
         use_logx: whether to use the log-scale on the time (x) axis.
+        figsize: output figure size.
+        linewidth: line width.
 
     Returns: None
         Saves a plot to ``{plots_dir}/forecasters.pdf``.
@@ -70,10 +83,10 @@ def plot_forecasts(
             f"available: {data.columns.to_list()}"
         )
 
-    set_style()
+    set_theme()
     colors = get_colors()
     normal_colors = colors[:3] + colors[4:7] + colors[8:]  # remove red, gray
-    plt.figure(figsize=(12, 4), facecolor="white")
+    plt.figure(figsize=figsize, facecolor="white")
     if "true_probs" in data.columns:
         plt.scatter(data.time, data.true_probs, marker=".", alpha=0.7,
                     color=colors[7], label=r"reality ($r_t$)")
@@ -81,7 +94,7 @@ def plot_forecasts(
         plt.scatter(data.time, data.data, marker=".", alpha=0.7,
                     color=colors[7], label=r"data ($y_t$)")
     for i, name in enumerate(forecasters):
-        plt.plot(data.time, data[name], linewidth=1.5, alpha=0.9,
+        plt.plot(data.time, data[name], linewidth=linewidth, alpha=0.9,
                  color=normal_colors[i % len(normal_colors)], label=name)
     plt.title("Forecasters", fontweight="regular", fontsize="13")
     plt.xlabel("Time")
@@ -130,8 +143,6 @@ def plot_comparison(
         scoring_rule: str = "brier",
         plots_dir: str = "./plots",
         alpha: float = 0.05,
-        lo: float = -1.,
-        hi: float = 1.,
         boundary_type: str = "mixture",
         v_opt: float = 10,
         compare_baselines: tuple = (),
@@ -140,6 +151,7 @@ def plot_comparison(
         n_repeats: int = 10000,
         plot_width: bool = True,
         use_logx: bool = True,
+        linewidth: int = 2,
 ) -> Tuple[pd.DataFrame, plt.Axes]:
     """Compare two forecasting strategies and plot confidence sequences on
     their average forecast score differentials.
@@ -158,8 +170,6 @@ def plot_comparison(
         scoring_rule: name of the scoring rule to be used (default: brier)
         plots_dir: directory to store all plots (default: ./plots)
         alpha: significance level for confidence sequences (default: 0.05)
-        lo: minimum value of score differentials (default: -1)
-        hi: maximum value of score differentials (default: 1)
         boundary_type: type of uniform boundary used for CS (default: mixture)
         v_opt: value of intrinsic time where the boundary is optimized.
             Default is 10; set to ``None`` in *post-hoc* analyses (only)
@@ -174,6 +184,7 @@ def plot_comparison(
             (default: 10000)
         plot_width: if true, also plot the width of CS/CI
         use_logx: if true, use the logarithmic scale on the x-axis.
+        linewidth: line width.
 
     Returns:
         A tuple of two items.
@@ -196,15 +207,15 @@ def plot_comparison(
     # CS/CI calculations
     confseqs = OrderedDict()
     confseqs["cs"] = compare_forecasts(
-        data, name_p, name_q, scoring_rule, alpha, lo, hi,
+        data, name_p, name_q, scoring_rule, alpha,
         use_asymptotic=False, boundary_type=boundary_type, v_opt=v_opt)
     if "h" in compare_baselines:
         confseqs["h"] = compare_forecasts(
-            data, name_p, name_q, scoring_rule, alpha, lo, hi,
+            data, name_p, name_q, scoring_rule, alpha,
             use_hoeffding=True, boundary_type=boundary_type, v_opt=v_opt)
     if "acs" in compare_baselines:
         confseqs["acs"] = compare_forecasts(
-            data, name_p, name_q, scoring_rule, alpha, lo, hi,
+            data, name_p, name_q, scoring_rule, alpha,
             use_asymptotic=True)
     if "ci" in compare_baselines:
         confseqs["ci"] = confint_lai(
@@ -228,7 +239,7 @@ def plot_comparison(
         assert "ci" in compare_baselines
         fder_cs, fder_ci = compute_fder(
             data, name_p, name_q, n_repeats=n_repeats,
-            scoring_rule=scoring_rule, alpha=alpha, lo=lo, hi=hi)
+            scoring_rule=scoring_rule, alpha=alpha)
     else:
         fder_cs, fder_ci = None, None
     if plot_miscoverage:
@@ -236,21 +247,27 @@ def plot_comparison(
         assert "ci" in compare_baselines
         miscov_cs, miscov_ci = compute_miscoverage(
             data, name_p, name_q, n_repeats=n_repeats,
-            scoring_rule=scoring_rule, alpha=alpha, lo=lo, hi=hi)
+            scoring_rule=scoring_rule, alpha=alpha)
     else:
         miscov_cs, miscov_ci = None, None
 
     # Plot
     n_figures = 1 + (plot_fder or plot_miscoverage) + plot_width
-    figsize = [(8, 5), (12, 4), (16, 4)][n_figures - 1]
+    figsize = [(8, 5), (12, 5), (16, 5)][n_figures - 1]
     i = 0
 
-    set_style()
+    set_theme()
     fig, axes = plt.subplots(1, n_figures, figsize=figsize, facecolor="white")
     if n_figures == 1:
         axes = [axes]
     xscale = "log" if use_logx else "linear"
     xlim = (10, T) if use_logx else None
+    if scoring_rule != "winkler":
+        a, b = get_scoring_rule(scoring_rule).bounds
+        lo, hi = a - b, b - a
+    else:
+        q0 = min(min(qs), min(1 - qs))
+        lo, hi = 1 - 2 / q0, 1
     y_rad = 0.6 * hi if abs(lo) == hi else 0.25 * (hi - lo) / 2
     ylim = (-y_rad, y_rad)
 
@@ -258,12 +275,14 @@ def plot_comparison(
     axes[i].axhline(color=COLORS["data"], alpha=0.5)
     if true_probs is not None:
         axes[i].plot(times, true_deltas, alpha=0.8, color=COLORS["true"],
-                     linestyle=LINESTYLES["true"], label=LABELS["true"])
+                     linestyle=LINESTYLES["true"], linewidth=linewidth,
+                     label=LABELS["true"])
     for cs_type, (lcbs, ucbs) in confseqs.items():
         axes[i].plot(times, ucbs, alpha=0.8, color=COLORS[cs_type],
-                     linestyle=LINESTYLES[cs_type], label=LABELS[cs_type])
+                     linestyle=LINESTYLES[cs_type], linewidth=linewidth,
+                     label=LABELS[cs_type])
         axes[i].plot(times, lcbs, alpha=0.8, color=COLORS[cs_type],
-                     linestyle=LINESTYLES[cs_type])
+                     linestyle=LINESTYLES[cs_type], linewidth=linewidth)
     axes[i].set(
         xscale=xscale,
         xlim=xlim,
@@ -279,13 +298,16 @@ def plot_comparison(
     # Plot 2: either miscoverage or false decision rate
     if plot_miscoverage or plot_fder:
         rate_cs = miscov_cs if plot_miscoverage else fder_cs
-        axes[i].plot(times, rate_cs, linestyle=LINESTYLES["cs"],
+        axes[i].plot(times, rate_cs,
+                     linestyle=LINESTYLES["cs"], linewidth=linewidth,
                      color=COLORS["cs"], label=LABELS["cs"])
         if "ci" in compare_baselines:
             rate_ci = miscov_ci if plot_miscoverage else fder_ci
-            axes[i].plot(times, rate_ci, linestyle=LINESTYLES["ci"],
+            axes[i].plot(times, rate_ci,
+                         linestyle=LINESTYLES["ci"], linewidth=linewidth,
                          color=COLORS["ci"], label=LABELS["ci"])
-        axes[i].plot(times, np.repeat(alpha, T), linestyle=LINESTYLES["data"],
+        axes[i].plot(times, np.repeat(alpha, T),
+                     linestyle=LINESTYLES["data"], linewidth=linewidth,
                      color=COLORS["data"], label="Significance Level")
         axes[i].set(
             xscale=xscale,
@@ -302,7 +324,8 @@ def plot_comparison(
     if plot_width:
         for cs_type, (lcbs, ucbs) in confseqs.items():
             axes[i].plot(times, ucbs - lcbs, color=COLORS[cs_type],
-                         linestyle=LINESTYLES[cs_type], label=LABELS[cs_type])
+                         linestyle=LINESTYLES[cs_type], linewidth=linewidth,
+                         label=LABELS[cs_type])
         axes[i].set(
             xscale=xscale,
             xlim=xlim,
@@ -314,9 +337,11 @@ def plot_comparison(
         i += 1
 
     if scoring_rule == "winkler":
-        target_str = r"$W_t$" f"({name_p}, {name_q}), S=brier"
+        score_name = "WinklerScore"
+        target_str = r"$W_t$" f"({name_p}, {name_q}), S=BrierScore"
     else:
-        target_str = r"$\Delta_t$" f"({name_p}, {name_q}), S={scoring_rule}"
+        score_name = get_scoring_rule(scoring_rule).name
+        target_str = r"$\Delta_t$" f"({name_p}, {name_q}), S={score_name}"
 
     # str_t = f"$T=10^{np.log10(T):.2g}$" if use_logx else f"T={T}"
     fig.suptitle(f"{(1-alpha)*100:2.0f}% Confidence Sequences on {target_str}",
@@ -325,7 +350,7 @@ def plot_comparison(
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
         fig.savefig(os.path.join(
-            plots_dir, f"comparecast_cs_{name_p}_{name_q}_{scoring_rule}.pdf"))
+            plots_dir, f"comparecast_cs_{name_p}_{name_q}_{score_name}.pdf"))
 
     results = {
         "time": times,
@@ -352,12 +377,11 @@ def plot_pairwise_comparisons(
         scoring_rule: str = "brier",
         plots_dir: str = "./plots",
         alpha: float = 0.05,
-        lo: float = -1.,
-        hi: float = 1.,
         boundary_type: str = "mixture",
         v_opt: float = 10,
         compare_baselines: tuple = (),
         use_logx: bool = True,
+        linewidth: int = 2,
 ) -> plt.Axes:
     """Plot pairwise comparisons of forecasters in data.
 
@@ -369,8 +393,6 @@ def plot_pairwise_comparisons(
         scoring_rule: name of the scoring rule to be used (default: brier)
         plots_dir: directory to store all plots (default: ./plots)
         alpha: significance level for confidence sequences (default: 0.05)
-        lo: minimum value of score differentials (default: -1)
-        hi: maximum value of score differentials (default: 1)
         boundary_type: type of uniform boundary used for CS (default: mixture)
         v_opt: value of intrinsic time where the boundary is optimized.
             Default is 10; set to ``None`` in *post-hoc* analyses (only)
@@ -379,6 +401,7 @@ def plot_pairwise_comparisons(
             Hoeffding-style CS (``h``), asymptotic CS (``acs``), and
             fixed-time CI (``ci``). (default: ``()``)
         use_logx: if true, use the logarithmic scale on the x-axis.
+        linewidth: line width.
 
     Returns:
         A ``matplotlib.pyplot.Axes`` object
@@ -392,11 +415,14 @@ def plot_pairwise_comparisons(
     if scoring_rule == "winkler":
         raise ValueError(
             f"pairwise comparison not supported for winkler's score")
+    else:
+        a, b = score.bounds
+        lo, hi = a - b, b - a
 
     n = len(forecasters)
     if n > 5:
         logging.warning("too many pairwise comparisons for %d forecasters", n)
-    fig, axes = plt.subplots(n, n, figsize=(5 * n, 4 * n), facecolor="white")
+    fig, axes = plt.subplots(n, n, figsize=(5 * n, 5 * n), facecolor="white")
     T = len(data)
     times = np.arange(1, T + 1)
     ys = data["data"].values
@@ -412,16 +438,16 @@ def plot_pairwise_comparisons(
             # CS/CI calculations
             confseqs = OrderedDict()
             confseqs["cs"] = compare_forecasts(
-                data, name_p, name_q, scoring_rule, alpha, lo, hi,
+                data, name_p, name_q, scoring_rule, alpha,
                 boundary_type=boundary_type, v_opt=v_opt)
             if "h" in compare_baselines:
                 confseqs["h"] = compare_forecasts(
-                    data, name_p, name_q, scoring_rule, alpha, lo, hi,
+                    data, name_p, name_q, scoring_rule, alpha,
                     boundary_type=boundary_type, v_opt=v_opt,
                     use_hoeffding=True)
             if "acs" in compare_baselines:
                 confseqs["acs"] = compare_forecasts(
-                    data, name_p, name_q, scoring_rule, alpha, lo, hi,
+                    data, name_p, name_q, scoring_rule, alpha,
                     use_asymptotic=True)
             if "ci" in compare_baselines:
                 confseqs["ci"] = confint_lai(
@@ -433,14 +459,14 @@ def plot_pairwise_comparisons(
                 true_deltas = compute_true_deltas(ps, qs, true_probs,
                                                   scoring_rule)
                 axes[i][j].plot(times, true_deltas, color=COLORS["true"],
-                                linestyle=LINESTYLES["true"],
+                                linestyle=LINESTYLES["true"], linewidth=linewidth,
                                 label=LABELS["true"])
             for cs_type, (lcbs, ucbs) in confseqs.items():
                 axes[i][j].plot(times, ucbs, alpha=0.8, color=COLORS[cs_type],
-                                linestyle=LINESTYLES[cs_type],
+                                linestyle=LINESTYLES[cs_type], linewidth=linewidth,
                                 label=LABELS[cs_type])
                 axes[i][j].plot(times, lcbs, alpha=0.8, color=COLORS[cs_type],
-                                linestyle=LINESTYLES[cs_type])
+                                linestyle=LINESTYLES[cs_type], linewidth=linewidth)
             axes[i][j].set_ylim(0.75 * lo, 0.75 * hi)
             if i == len(forecasters) - 1:
                 axes[i][j].set_xlabel("Time")
@@ -458,25 +484,30 @@ def plot_pairwise_comparisons(
             axes[i][j].legend(loc=("upper right" if ucbs[-1] + lcbs[-1] < 0
                                    else "lower right"))
 
+    if scoring_rule == "winkler":
+        score_name = "WinklerScore"
+    else:
+        score_name = get_scoring_rule(scoring_rule).name
     fig.suptitle(f"{(1 - alpha) * 100:2.0f}% "
                  r"Confidence Sequences on $\Delta_t$"
-                 f", S={scoring_rule}",
+                 f", S={score_name}",
                  fontsize=20, fontweight="regular")
     fig.tight_layout()
     fig.subplots_adjust(top=0.92)
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
         fig.savefig(os.path.join(plots_dir,
-                                 f"comparecast_cs_{n}x{n}_{scoring_rule}.pdf"))
+                                 f"comparecast_cs_{n}x{n}_{score_name}.pdf"))
 
     return axes
 
 
 def plot_ucbs(
         ucbs: pd.DataFrame,
-        style_name: str = PYPLOT_DEFAULT_STYLE,
-        palette: List = SEABORN_DEFAULT_PALETTE,
+        use_preset_theme: bool = True,
         save_filename: str = "confseq_ucbs.pdf",
+        figsize: Tuple[int, int] = (8, 5),
+        linewidth: int = 2,
         **plot_kwargs
 ):
     """Plot the UCBs of multiple confidence sequences across time.
@@ -485,25 +516,25 @@ def plot_ucbs(
 
     Args:
         ucbs: a ``pd.DataFrame`` with UCBs.
-        style_name: matplotlib plot style.
-        palette: list of colors to to seaborn's lineplot
+        use_preset_theme: whether to use preset theme (default: `True`).
         save_filename: filename to save the resulting plot.
+        figsize: output figure size.
+        linewidth: line width.
         **plot_kwargs: any other arguments to ``matplotlib.pyplot.Axes.set()``.
 
     Returns:
         None
     """
-    set_style(style_name)
+    if use_preset_theme:
+        set_theme()
     if "figsize" in plot_kwargs:
         plt.figure(figsize=plot_kwargs["figsize"])
         del plot_kwargs["figsize"]
     ucbs["Time"] = np.arange(1, len(ucbs) + 1)
     df = ucbs.melt(id_vars=["Time"], value_vars=None,
                    var_name="Method", value_name="UCB")
-    plt.figure(figsize=(8, 5))
-    ax = sns.lineplot(x="Time", y="UCB", hue="Method",
-                      palette=palette,
-                      data=df)
+    plt.figure(figsize=figsize)
+    ax = sns.lineplot(x="Time", y="UCB", hue="Method", linewidth=linewidth, data=df)
     ax.set(**plot_kwargs)
     plt.tight_layout()
     if save_filename is not None:
@@ -523,7 +554,7 @@ def plot_mlb_forecasts(
         save_filename: str = None,
 ):
     """Plotting function for MLB forecasts."""
-    set_style()
+    set_theme()
     plt.figure(figsize=(15, 5), facecolor="white")
     filtered_data = data[data.season.isin(years)]
     if len(years) == 1 and n_games is not None:
@@ -545,31 +576,28 @@ def plot_mlb_forecasts(
 
     team = "Home" if team == "MLB" else team
     if len(years) == 1:
+        xticks = []
+        xticklabels = []
         suffix = (str(years[0]) if n_games is None
                   else f"{years[0]}, last {n_games} games")
-        ax.set(
-            xticks=[],
-            xticklabels=[],
-            xlabel="Game",
-            ylabel="Probability",
-            title=f"{team} Win Probability Forecasts ({suffix})" +
-                  (f" (regular seasons only)" if no_playoffs else ""),
-            ylim=(-0.05, 1.05),
-        )
     else:
         xticks = np.zeros_like(years)
         xticks[1:] = np.where(np.diff(filtered_data.season))[0]
+        xticklabels = years
         suffix = f"{years[0]}-{years[-1]}"
-        ax.set(
-            xticks=xticks,
-            xticklabels=years,
-            xlabel="Year",
-            ylabel="Probability",
-            title=f"{team} Win Probability Forecasts ({suffix})" +
-                  (f" (regular seasons only)" if no_playoffs else ""),
-            ylim=(-0.05, 1.05),
-        )
-    ax.legend(loc="lower right", bbox_to_anchor=(1.15, 0))
+    ax.set(
+        xticks=xticks,
+        xticklabels=xticklabels,
+        xlabel="Year",
+        ylabel="Probability",
+        ylim=(-0.05, 1.05),
+    )
+    ax.set_title(
+        f"{team} Win Probability Forecasts ({suffix})" +
+        (f" (regular seasons only)" if no_playoffs else ""),
+        fontsize=14,
+    )
+    ax.legend(loc="lower right", bbox_to_anchor=(1.1, 0))
     plt.tight_layout()
 
     if save_filename is not None:
@@ -579,12 +607,16 @@ def plot_mlb_forecasts(
 
 def plot_weather_hz_evalues(
         evalues: pd.DataFrame,
+        use_preset_theme: bool = True,
         save_filename: str = None,
 ):
     """Reproduces Figure 3 from Henzi & Ziegel (2021).
 
     A/B: A is not better than B under the null hypothesis
     """
+    if use_preset_theme:
+        set_theme()
+
     fg = sns.relplot(
         x="Date",
         y="E-value",
@@ -592,6 +624,7 @@ def plot_weather_hz_evalues(
         hue="Airport",
         style="Airport",
         kind="line",
+        linewidth=2,
         height=5,
         aspect=1,
         data=evalues,
@@ -604,7 +637,6 @@ def plot_weather_hz_evalues(
         )
         ax.axhline(y=1, linestyle="-", color="black")
         ax.axhline(y=10, linestyle="--", color="gray")
-        ax.grid()
 
     if save_filename is not None:
         os.makedirs(os.path.dirname(save_filename), exist_ok=True)
@@ -619,12 +651,16 @@ def plot_weather_comparison(
         v_opt: float = 0.5,
         c: float = 0.1,
         plots_dir: str = "./plots/weather",
+        use_preset_theme: bool = True,
 ):
     """Produces CS and e-value plots for the weather forecast comparison.
 
     Also returns a dataframe containing the CS and the e-values.
     """
     assert lag in LAGS, f"invalid lag {lag}, available: {LAGS}"
+
+    if use_preset_theme:
+        set_theme()
 
     df_rows = []
     pairs = [("hclr", "idr"), ("idr", "hclr_noscale"), ("hclr", "hclr_noscale")]
@@ -701,7 +737,6 @@ def plot_weather_comparison(
             ylim=(-.075, .075)
         )
         ax.axhline(y=0, linestyle="-", color="black")
-        ax.grid()
 
     # remove unnecessary legend items
     for handle, text in zip(fg._legend.legendHandles[5:],
@@ -745,7 +780,6 @@ def plot_weather_comparison(
         )
         ax.axhline(y=1, linestyle="-", color="black")
         ax.axhline(y=10, linestyle="--", color="gray")
-        ax.grid()
 
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)

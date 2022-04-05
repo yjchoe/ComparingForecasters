@@ -15,6 +15,7 @@ Requires Python 3.7+.
 From `pip`:
 ```shell
 pip install --upgrade pip
+pip install --upgrade pandas seaborn tqdm confseq
 pip install --upgrade comparecast
 ```
 
@@ -24,6 +25,7 @@ git clone https://github.com/yjchoe/ComparingForecasters
 cd ComparingForecasters
 
 pip install --upgrade pip
+pip install -r requirements.txt
 pip install -e .
 ```
 
@@ -93,27 +95,27 @@ python plot_comparisons.py -d forecasts/mlb_2010_2019.csv \
 - [**`nb_comparecast_synthetic.ipynb`**](nb_comparecast_synthetic.ipynb): 
   Experiments on synthetic data and forecasts. 
   Includes comparison with other methods (fixed-time CI and asymptotic CS).
-  Section 5.1 in our paper.
+  Section 6.1 in our paper.
 - [**`nb_comparecast_scoringrules.ipynb`**](nb_comparecast_scoringrules.ipynb): 
   Experiments on synthetic data and forecasts using different scoring rules.
-  Section 5.1 in our paper.
+  Section 6.1 in our paper.
 - [**`nb_comparecast_baseball.ipynb`**](nb_comparecast_baseball.ipynb): 
   Experiments on Major League Baseball forecasts, 
   leading up to the 2019 World Series.
-  Section 5.2 in our paper.
+  Section 6.2 in our paper.
 - [**`nb_comparecast_weather.ipynb`**](nb_comparecast_weather.ipynb): 
   Experiments on postprocessing methods for ensemble weather forecasts. 
   Includes e-value comparison with 
   [Henzi & Ziegel (2021)](https://arxiv.org/abs/2103.08402).
-  Section 5.3 in our paper.
+  Section 6.3 in our paper.
 - [**`nb_comparecast_weather_eda.ipynb`**](nb_comparecast_weather_eda.ipynb): 
   Exploratory plots on the ensemble weather forecast dataset. 
-  Section 5.3 in our paper.
+  Section 6.3 in our paper.
 - [**`nb_iid_mean.ipynb`**](nb_iid_mean.ipynb): 
   Comparison of uniform boundaries on the mean of IID data.
   Partly reproduces Figure 1 from 
   [Howard et al. (2021)](https://doi.org/10.1214/20-AOS1991).
-  Appendix C in our paper.
+  Appendix G in our paper.
 
 ## License
 
