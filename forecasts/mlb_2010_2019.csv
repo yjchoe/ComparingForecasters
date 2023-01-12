@@ -1,4 +1,4 @@
-date,season,playoff,team1,team2,score1,score2,time,data,win,fivethirtyeight,fivethirtyeight_old,constant,laplace,k29,vegas_open,vegas
+date,season,playoff,team1,team2,score1,score2,time,y,win,fivethirtyeight,fivethirtyeight_old,constant,laplace,k29,vegas_open,vegas
 2010-04-04,2010,,BOS,NYY,9.0,7.0,1,1,1,0.471713801097042,0.4890457654175355,0.5,0.5,0.5,0.5086640095382324,0.5151837227587271
 2010-04-05,2010,,ANA,MIN,6.0,3.0,2,1,1,0.556480041214462,0.5668402010858496,0.5,0.5,0.5,0.5525940018439556,0.5386856580468482
 2010-04-05,2010,,ARI,SDP,6.0,3.0,3,1,1,0.585623347665294,0.53727433095824,0.5,0.5,0.5,0.6187175020242454,0.6336902479198168
