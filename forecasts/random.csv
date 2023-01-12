@@ -1,4 +1,4 @@
-time,data,true_probs,oracle,oracle_80,always_0.5,always_0,always_1,laplace,k29_epa,k29_poly3,k29_rbf0.01,mix_50_50_random_oracle,mix_80_20_random_oracle,mix_50_50_oracle_random,mix_80_20_oracle_random
+time,y,true_probs,oracle,oracle_80,constant_0.5,constant_0,constant_1,laplace,k29_epa,k29_poly3,k29_rbf0.01,mix_50_50_random_oracle,mix_80_20_random_oracle,mix_50_50_oracle_random,mix_80_20_oracle_random
 1,1,0.6764052345967664,1.0,0.8,0.5,0,1,1.0,0.0,0.0,0.0,1.0,1.0,0.5,0.5
 2,1,0.5400157208367223,1.0,0.8,0.5,0,1,1.0,1.0,1.0,1.0,0.5,0.5,1.0,1.0
 3,1,0.597873798410574,1.0,0.8,0.5,0,1,1.0,1.0,1.0,1.0,1.0,0.5,0.5,1.0

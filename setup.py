@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='comparecast',
-    version='0.2.0',
+    version='0.3.0',
     packages=['comparecast', 'comparecast.data_utils'],
     python_requires='>=3.7',
     install_requires=[
@@ -15,7 +15,7 @@ setup(
         'seaborn>=0.11',
         'tqdm',
         'openpyxl',
-        'confseq>=0.0.6',
+        'confseq>=0.0.9',
     ],
     url='https://github.com/yjchoe/ComparingForecasters',
     license='MIT',

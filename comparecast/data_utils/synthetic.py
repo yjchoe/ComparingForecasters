@@ -62,8 +62,29 @@ def randoms_zeros_then_ones(
 
 def default(
         n: int,
+        n_spans: int = 5,
 ):
-    """Default setting for the paper.
+    """Default setting for simulated experiments in the paper.
+
+    First span is random; the next `n_spans - 1` spans alternate between constant zeros/ones.
+    Odd number of spans (for even n) is preferred.
+    """
+    assert n >= n_spans, f"default setting requires n > n_spans (given: {n} > {n_spans})"
+
+    span_length = n // n_spans
+    seqs = [np.repeat(0.5, span_length)]
+    for span in range(1, n_spans):
+        if span % 2 == 0:
+            seqs.append(np.zeros((span_length, )))
+        else:
+            seqs.append(np.ones((span_length, )))
+    return np.concatenate(seqs)
+
+
+def default_logt(
+        n: int,
+):
+    """Default setting but in log scale of time.
 
     Random for the first 100, and then repeated zeros-then-ones in
     each log-scale span ([101, 1000], [1001, 10000], ...).
@@ -101,10 +122,10 @@ def make_preset(
 ):
     """A helper function that makes binary data given true probabilities."""
     n = len(true_probs)
-    data = bernoulli(n, true_probs, rng=rng)
+    ys = bernoulli(n, true_probs, rng=rng)
     return pd.DataFrame({
         "time": np.arange(1, n + 1),
-        "data": data,
+        "y": ys,
         "true_probs": true_probs,
     })
 
@@ -113,12 +134,29 @@ def preset_default(
         n: int,
         noise: float = 0.1,
         rng: np.random.Generator = default_rng(),
+        n_spans: int = 5,
+) -> pd.DataFrame:
+    """Default synthetic data without log-scale.
+
+    Generated from a noisy version of
+    2000 1/2s, 2000 1s, 2000 0s, 2000 1s, and 2000 0s.
+    """
+    pattern = default(n, n_spans=n_spans)
+    true_probs = 0.8 * pattern + 0.2 * (1 - pattern)
+    true_probs = np.clip(true_probs + rng.normal(0, noise, n), 0, 1)
+    return make_preset(true_probs, rng)
+
+
+def preset_default_logt(
+        n: int,
+        noise: float = 0.1,
+        rng: np.random.Generator = default_rng(),
 ) -> pd.DataFrame:
     """Default synthetic data.
 
     Generated from a noisy version of
     100 1/2s, 1000 1s, 1000 0s, 1000 1s, 1000 0s, ..., 1000 1s, and 500 0s."""
-    pattern = default(n)
+    pattern = default_logt(n)
     true_probs = 0.8 * pattern + 0.2 * (1 - pattern)
     true_probs = np.clip(true_probs + rng.normal(0, noise, n), 0, 1)
     return make_preset(true_probs, rng)
@@ -156,10 +194,10 @@ def make_preset_beta(
     y_t ~ Beta(r_t, 1 - r_t)."""
     n = len(true_means)
     true_params = [true_means, 1. - true_means]
-    data = rng.beta(*true_params)
+    ys = rng.beta(*true_params)
     out = {
         "time": np.arange(1, n + 1),
-        "data": data,
+        "y": ys,
         "true_means": true_means,
         "true_dist": ["beta" for _ in range(n)],
     }
@@ -189,6 +227,7 @@ def preset_beta(
 # pd.DataFrame(time, data, true_probs)
 PRESETS = {
     "default": preset_default,
+    "default_logt": preset_default_logt,
     "random": preset_random,
     "sigmoid": preset_sigmoid,
     "beta": preset_beta,

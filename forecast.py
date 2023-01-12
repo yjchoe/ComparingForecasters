@@ -42,7 +42,7 @@ def main():
     parser.add_argument("--plot-only", action="store_true",
                         help="if provided, retrieves existing forecast data "
                              "and produce plots only (no forecasting)")
-    parser.add_argument("--no-logx", dest="use_logx", action="store_false",
+    parser.add_argument("--use-logx", dest="use_logx", action="store_true",
                         help="do not use log-scale on the time axis")
     args = parser.parse_args()
 
