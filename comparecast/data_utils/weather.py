@@ -32,13 +32,13 @@ def read_precip_fcs(
             df["date"] = pd.to_datetime(df["date"])
             df.insert(0, "airport", airport)
             df.insert(1, "lag", lag)
-            df.insert(4, "data", (df["obs"] > 0).astype(int))  # PoP
+            df.insert(4, "y", (df["obs"] > 0).astype(int))  # PoP
             df.insert(7, "ens", df[["p" + str(i)
                                     for i in range(1, 51)]].mean(axis=1))
             dfs.append(df)
     data = pd.concat(dfs, ignore_index=True)
     if pop_only:
-        data = data[["airport", "lag", "date", "data",
+        data = data[["airport", "lag", "date", "y",
                      "pop_idr", "pop_hclr", "pop_hclr_noscale"]].copy()
         data.rename(lambda s: s.replace("pop_", ""), axis=1, inplace=True)
     data = data.sort_values(["airport", "lag", "date"],
@@ -47,20 +47,20 @@ def read_precip_fcs(
 
 
 def read_hz_evalues(
-        data_dir: str = "eprob/replication_material/precip_fcs",
+        data_path: str = "eprob/replication_material/precip_fcs/evalues.csv",
 ) -> pd.DataFrame:
     """Read in and pre-process Henzi & Ziegel's e-values for the PoP forecasts,
     given by
     https://github.com/AlexanderHenzi/eprob/tree/master/replication_material .
 
     Args:
-        data_dir: directory containing precipitation forecasts (csv)
+        data_path: directory containing e-values (csv)
 
     Returns:
         A pandas dataframe containing the observations, forecasts,
         comparison hypotheses, and e-values.
     """
-    evalues = pd.read_csv(os.path.join(data_dir, "evalues.csv"))
+    evalues = pd.read_csv(data_path)
     evalues.columns = ["Airport", "Lag", "Date", "Precipitation",
                        "HCLR", "HCLR_", "IDR", "PoP",
                        "Hypothesis", "E-value"]

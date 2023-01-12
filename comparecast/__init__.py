@@ -8,7 +8,7 @@ from comparecast.comparecast import *
 from comparecast.confint import *
 from comparecast.confseq import *
 from comparecast.diagnostics import *
-from comparecast.evalues import *
+from comparecast.eprocess import *
 from comparecast.forecasters import *
 from comparecast.kernels import *
 from comparecast.plotting import *

@@ -26,7 +26,7 @@ def forecast(
 
     if not isinstance(data, pd.DataFrame):
         data = pd.DataFrame({"time": np.arange(1, len(data) + 1),
-                             "data": np.ndarray(data)})
+                             "y": np.ndarray(data)})
 
     if "all" in forecasters:
         forecasters = FORECASTERS_DEFAULT
@@ -34,7 +34,7 @@ def forecast(
     logging.info("forecasters:", ", ".join(forecasters))
     for name in forecasters:
         forecaster = get_forecaster(name)
-        data[name] = forecaster(data["data"].values)
+        data[name] = forecaster(data["y"].values)
 
     if out_file is not None:
         os.makedirs(os.path.dirname(out_file), exist_ok=True)
@@ -205,6 +205,7 @@ FORECASTERS = OrderedDict({
 FORECASTERS_ALL = list(FORECASTERS.keys())
 FORECASTERS_DEFAULT = ["laplace", "k29_poly3", "k29_rbf0.01",
                        "constant_0.5", "constant_0", "constant_1", "random"]
+
 
 def get_forecaster(name: str):
     """Return a forecaster as a function given their name."""

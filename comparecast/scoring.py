@@ -146,7 +146,7 @@ class LogarithmicScore(ScoringRule):
     """
     def __init__(self, eps: float = 1e-8):
         self.eps = eps
-        is_proper = self.eps > 1e-8
+        is_proper = self.eps <= 1e-8
         bounds = (np.log(eps) if eps > 0 else -np.inf, 0)
         super().__init__(
             is_proper=is_proper,
@@ -253,25 +253,122 @@ class AbsoluteScore(ScoringRule):
         # return 1 - (rs * ps).sum(axis=1)
 
 
-def winkler_score(
-        ps: np.ndarray,
-        qs: np.ndarray,
-        ys: np.ndarray,
-        base_score: str = "brier",
-) -> np.ndarray:
-    """Winkler (1994)'s normalized score (pointwise), which computes
-    a skill score against a baseline forecaster (q)."""
-    assert base_score != "winkler", \
-        "can't use winkler score as a base score for winkler score!"
-    assert np.logical_and(0 < qs, qs < 1).all()
-    s = get_scoring_rule(base_score)
-    T = len(ys)
-    zeros, ones = np.zeros(T), np.ones(T)
+class RelativeScore:
+    """A generic object for relative scores w.r.t. a reference forecaster.
 
-    numer = s(ps, ys) - s(qs, ys)
-    denom = np.where(ps >= qs, s(ps, ones) - s(qs, ones), s(ps, zeros) - s(qs, zeros))
-    denom = np.where(denom != 0, denom, 1e-8)
-    return numer / denom
+    Unlike :py:obj:ScoringRule:, it takes _two_ forecast arrays,
+     in addition to the outcome array.
+    Relative scores typically use a "base" scoring rule S.
+
+    Attributes:
+        is_proper: whether the scoring rule is proper
+        base_score: a base scoring rule that is used to evaluate
+            absolute forecasting skill (optional)
+        bounds (a `@property`): lower and upper bounds of the score function
+        name: name of the scoring rule
+    Methods:
+        __init__, score, expected_score
+    """
+    def __init__(
+            self,
+            is_proper: bool,
+            base_score: Union[str, ScoringRule] = None,
+            bounds: Tuple[float, float] = (-np.inf, np.inf),
+            name: str = None,
+    ):
+        self.is_proper = is_proper
+        self.base_score = get_scoring_rule(base_score)
+        self._bounds = bounds
+        self.name = f"SkillScore({base_score})" if name is None else name
+
+    def __repr__(self):
+        return self.name
+
+    def __call__(self, ps: ArrayLike, qs: ArrayLike, ys: ArrayLike) -> np.ndarray:
+        """Equivalent to `self.score()`.
+
+        Child classes should override the `score` method.
+        """
+        return self.score(ps, qs, ys)
+
+    @property
+    def bounds(self) -> Tuple[float, float]:
+        """Lower and upper bounds on the score.
+
+        If unknown, set to `(-np.inf, np.inf)` by default."""
+        return self._bounds
+
+    @bounds.setter
+    def bounds(self, value: Tuple[float, float]):
+        self._bounds = value
+
+    def score(self, ps: ArrayLike, qs: ArrayLike, ys: ArrayLike) -> np.ndarray:
+        """Compute pointwise scores in a vectorized manner."""
+        raise NotImplementedError
+
+    def expected_score(self, ps: ArrayLike, qs: ArrayLike, rs: ArrayLike) -> np.ndarray:
+        """Compute pointwise *expected* scores in a vectorized manner.
+
+        Same as `self.score()` if scoring rule is linear in y.
+        """
+        raise NotImplementedError
+
+
+class WinklerScore(RelativeScore):
+    """A generalized form of Winkler (1994)'s normalized score for binary forecasts.
+
+        w(p, q; y) = [S(p, y) - S(q, y)] / T(p, q)
+
+    where S is a "base" scoring rule and
+
+        T(p, q) = S(p, 1) - S(q, 1)  if p >= q
+                  S(p, 0) - S(q, 0)  if p <  q.
+
+    The score is a normalized variant of pointwise score differentials,
+    and it can be useful when the magnitude of the base scores can vary significantly
+    (e.g., for the logarithmic score).
+    The Winkler score is (strictly) proper if the base score if (strictly) proper.
+
+    A lower bound is 1 - 2/q_0, where q_0 is how close q can get to either 0 or 1.
+    """
+    def __init__(
+            self,
+            base_score: Union[str, ScoringRule] = "logarithmic",
+            bounds: Tuple[float, float] = (1 - 2 / 1e-8, 1),
+    ):
+        base_score = get_scoring_rule(base_score)
+        super().__init__(
+            is_proper=base_score.is_proper,
+            base_score=base_score,
+            bounds=bounds,
+            name="WinklerScore({})".format(base_score.name.split("Score")[0]),
+        )
+
+    def score(self, ps: ArrayLike, qs: ArrayLike, ys: ArrayLike) -> np.ndarray:
+        """Compute pointwise scores in a vectorized manner."""
+        assert len(ps.shape) <= 2, \
+            "Winkler's score is only defined for binary outcomes/forecasts"
+        assert np.logical_and(0 < qs, qs < 1).all()
+
+        T = len(ps)
+        zeros, ones = np.zeros(T), np.ones(T)
+        if len(ps.shape) == 2:
+            zeros = convert_to_onehot(zeros, 2)
+            ones = convert_to_onehot(ones, 2)
+
+        difference = self.base_score(ps, ys) - self.base_score(qs, ys)
+        normalizer = np.where(
+            ps >= qs,
+            self.base_score(ps, ones) - self.base_score(qs, ones),
+            self.base_score(ps, zeros) - self.base_score(qs, zeros),
+        )
+        # difference is also zero when normalizer is zero
+        normalizer = np.where(normalizer != 0, normalizer, 1e-8)
+        return difference / normalizer
+
+    def expected_score(self, ps: ArrayLike, qs: ArrayLike, rs: ArrayLike) -> np.ndarray:
+        """Compute pointwise *expected* scores in a vectorized manner."""
+        return self.score(ps, qs, rs)
 
 
 """
@@ -285,16 +382,14 @@ SCORING_RULES = {
     "spherical": SphericalScore,
     "zero_one": ZeroOneScore,
     "absolute": AbsoluteScore,
-    "winkler": winkler_score,
+    "winkler": WinklerScore,
 }
 
 
 def get_scoring_rule(name: Union[ScoringRule, str], **kwargs) -> Union[ScoringRule, Callable]:
     """Return a scoring rule as a function given its name and optional keyword arguments."""
-    if isinstance(name, ScoringRule):
+    if isinstance(name, ScoringRule) or isinstance(name, RelativeScore):
         return name
-    if name == "winkler":
-        return winkler_score
     try:
         return SCORING_RULES[name](**kwargs)
     except KeyError:

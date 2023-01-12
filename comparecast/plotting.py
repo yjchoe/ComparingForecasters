@@ -5,7 +5,6 @@ Some plotting utilities
 import logging
 import os.path
 from typing import Iterable, List, Tuple, Union
-from collections import OrderedDict
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -15,28 +14,31 @@ from comparecast.comparecast import compare_forecasts
 from comparecast.forecasters import FORECASTERS_ALL
 from comparecast.scoring import get_scoring_rule
 from comparecast.confint import confint_lai
-from comparecast.diagnostics import (
-    compute_true_deltas, compute_miscoverage, compute_fder,
-)
+from comparecast.diagnostics import compute_true_deltas, compute_diagnostics
 from comparecast.data_utils.weather import AIRPORTS, LAGS, read_precip_fcs
+from comparecast.eprocess import eprocess_hz
 
 
 DEFAULT_CONTEXT = "paper"
 DEFAULT_STYLE = "whitegrid"
 DEFAULT_PALETTE = "colorblind"
+DEFAULT_FONT = "Avenir"
+DEFAULT_FONTS_SCALE = 1.75
 
 
 def set_theme(
         context: str = DEFAULT_CONTEXT,
         style: str = DEFAULT_STYLE,
         palette: str = DEFAULT_PALETTE,
+        font: str = DEFAULT_FONT,
+        font_scale: float = DEFAULT_FONTS_SCALE,
         **kwargs
 ):
     """Set default plotting style.
 
     Alias for `seaborn.set_theme()` with different defaults.
     """
-    return sns.set_theme(context, style, palette, **kwargs)
+    return sns.set_theme(context, style, palette, font, font_scale, **kwargs)
 
 
 def get_color_by_index(index: int, palette: str = DEFAULT_PALETTE):
@@ -57,11 +59,13 @@ def plot_forecasts(
         use_logx: bool = True,
         figsize: Tuple[int, int] = (12, 5),
         linewidth: float = 2,
+        legend_out: bool = True,
+        **theme_kwargs
 ):
     """Plot forecasts along with the dataset.
 
-    Also plots ``data`` or ``true_probs``, if those columns are available in
-    ``data``.
+    Also plots ``data`` or ``true_probs``,
+    if those columns are available in ``data``.
 
     Args:
         data: A ``pd.DataFrame`` containing a set of forecasts as its columns.
@@ -71,39 +75,44 @@ def plot_forecasts(
         use_logx: whether to use the log-scale on the time (x) axis.
         figsize: output figure size.
         linewidth: line width.
+        legend_out: whether to draw the legend outside the plot.
+        legend_loc: location of the legend. Only applies when ``legend_out == False``.
 
     Returns: None
         Saves a plot to ``{plots_dir}/forecasters.pdf``.
     """
     if "all" in forecasters:
-        forecasters = [f for f in FORECASTERS_ALL if f in data.columns]
+        forecasters = [f for f in FORECASTERS_ALL if f in data.columns and f != "random"]
     for name in forecasters:
         assert name in data.columns, (
             f"invalid forecaster name {name}. "
             f"available: {data.columns.to_list()}"
         )
 
-    set_theme()
+    set_theme(**theme_kwargs)
     colors = get_colors()
     normal_colors = colors[:3] + colors[4:7] + colors[8:]  # remove red, gray
     plt.figure(figsize=figsize, facecolor="white")
     if "true_probs" in data.columns:
         plt.scatter(data.time, data.true_probs, marker=".", alpha=0.7,
                     color=colors[7], label=r"reality ($r_t$)")
-    elif "data" in data.columns:
-        plt.scatter(data.time, data.data, marker=".", alpha=0.7,
+    elif "y" in data.columns:
+        plt.scatter(data.time, data.y, marker=".", alpha=0.7,
                     color=colors[7], label=r"data ($y_t$)")
     for i, name in enumerate(forecasters):
         plt.plot(data.time, data[name], linewidth=linewidth, alpha=0.9,
                  color=normal_colors[i % len(normal_colors)], label=name)
-    plt.title("Forecasters", fontweight="regular", fontsize="13")
+    plt.title("Forecasters", fontsize="large")
     plt.xlabel("Time")
-    plt.ylabel("Probability/Outcome")
+    plt.ylabel("Probability Forecast")
     plt.ylim(-0.05, 1.05)
     if use_logx:
         plt.xscale("log")
         plt.xlim(10, len(data))
-    plt.legend(loc="lower right", bbox_to_anchor=(1.15, 0), frameon=False)
+    if legend_out:
+        plt.legend(loc="lower right", bbox_to_anchor=(1.35, 0), frameon=False)
+    else:
+        plt.legend(loc="best")
     plt.tight_layout()
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
@@ -111,28 +120,34 @@ def plot_forecasts(
 
 
 LABELS = {
-    "data": r"$\hat\Delta_t$",
+    "y": r"$\hat\Delta_t$",
     "true": r"$\Delta_t$",
     "cs": "EB CS",  # default
     "h": "Hoeffding CS",
     "acs": "Asymptotic CS",
     "ci": "Fixed-Time CI",
+    "dm": "DM Test",
+    "gw": "GW Test",
 }
 COLORS = {
-    "data": get_color_by_index(7),   # gray
+    "y": get_color_by_index(7),      # gray
     "true": "darkred",               # darkred
     "cs": get_color_by_index(0),     # blue
     "h": get_color_by_index(9),      # skyblue
-    "acs": get_color_by_index(2),    # green
     "ci": get_color_by_index(1),     # orange
+    "acs": get_color_by_index(2),    # green
+    "dm": get_color_by_index(2),     # green
+    "gw": get_color_by_index(3),     # darkorange
 }
 LINESTYLES = {
-    "data": "solid",
+    "y": "solid",
     "true": "solid",
     "cs": "solid",
-    "h": "dashed",
-    "acs": "dashdot",
-    "ci": "dotted",
+    "h": "dotted",
+    "acs": "dashed",
+    "ci": "dashdot",
+    "dm": "dotted",
+    "gw": "dotted",
 }
 
 
@@ -141,25 +156,34 @@ def plot_comparison(
         name_p: str,
         name_q: str,
         scoring_rule: str = "brier",
+        lag: int = 1,
+        aligned_outcomes: bool = True,
         plots_dir: str = "./plots",
         alpha: float = 0.05,
         boundary_type: str = "mixture",
         v_opt: float = 10,
-        compare_baselines: tuple = (),
-        plot_fder: bool = False,
-        plot_miscoverage: bool = False,
-        n_repeats: int = 10000,
+        baselines: tuple = (),
+        plot_e: bool = True,
         plot_width: bool = True,
-        use_logx: bool = True,
+        plot_diagnostics: bool = False,
+        diagnostics_fn: str = "miscoverage",
+        diagnostics_baselines: tuple = ("ci", ),
+        n_repeats: int = 1000,
+        use_logx: bool = False,
         linewidth: int = 2,
+        xlim: tuple = None,
+        ylim_scale: float = 0.6,
+        no_title: bool = False,
+        **theme_kwargs
 ) -> Tuple[pd.DataFrame, plt.Axes]:
-    """Compare two forecasting strategies and plot confidence sequences on
-    their average forecast score differentials.
+    """Compare two sequential forecasters by plotting
+     confidence sequences and e-processes for their average forecast score differentials.
 
-    Produces up to three plots:
-        1. Plot of confidence sequences/intervals on score differentials
-        2. (Optional) Cumulative miscoverage rates or false decision rates
-        3. (Optional) Widths of confidence sequences/intervals
+    Produces up to four plots:
+        1. Plot of confidence sequences/intervals on average score differentials
+        2. (Optional) Widths of confidence sequences/intervals
+        3. (Optional) Plot of e-processes for the nulls that "p is no better/worse than q on average"
+        4. (Optional) Diagnostics plot (umulative miscoverage rates or false decision rate
 
     Args:
         data: pandas dataframe or path to a saved csv containing
@@ -168,23 +192,31 @@ def plot_comparison(
         name_p: column name of the first forecaster
         name_q: column name of the second forecaster
         scoring_rule: name of the scoring rule to be used (default: brier)
+        lag: forecast lag. Currently requires compute_cs is False if lag > 1. (default: 1)
+        aligned_outcomes: whether the outcomes are aligned with the forecasts, if lag > 1.
+            (default: True)
         plots_dir: directory to store all plots (default: ./plots)
         alpha: significance level for confidence sequences (default: 0.05)
         boundary_type: type of uniform boundary used for CS (default: mixture)
-        v_opt: value of intrinsic time where the boundary is optimized.
+        v_opt: value of intrinsic time when the boundary is optimized.
             Default is 10; set to ``None`` in *post-hoc* analyses (only)
             to optimize the boundary at the last time step.
-        compare_baselines: compare with other baselines provided, including
+        baselines: compare with other baselines provided, including
             Hoeffding-style CS (``h``), asymptotic CS (``acs``), and
             fixed-time CI (``ci``). (default: ``()``)
-        plot_fder: if true, also plot false decision rates (default: False)
-        plot_miscoverage: if true, also plot cumulative miscoverage rates
-            (default: False)
+        plot_e: if True, also plot e-processes (default: True)
         n_repeats: number of repeated trials for miscoverage rate calculation
             (default: 10000)
         plot_width: if true, also plot the width of CS/CI
+        plot_diagnostics: if true, also plot a diagnostics plot of the CS/CIs
+        diagnostics_fn: which diagnostics function to use (default: miscoverage)
+        diagnostics_baselines: which baseline CS/CIs to include for diagnostics
+            (default: ``("ci", )``)
         use_logx: if true, use the logarithmic scale on the x-axis.
-        linewidth: line width.
+        linewidth: line width. (default: 2)
+        xlim: x-axis (time) limits as a tuple. (default: None)
+        ylim_scale: scale of the y-axis limit for the CS plot. (default: 0.6)
+        no_title: do not add a title to the plot. (default: False)
 
     Returns:
         A tuple of two items.
@@ -192,196 +224,291 @@ def plot_comparison(
                and the confidence sequences (cs)
             2. A ``matplotlib.pyplot.Axes`` object
     """
-    assert not (plot_fder and plot_miscoverage), (
-        "can only plot either FDeR or miscoverage"
-    )
-
     if not isinstance(data, pd.DataFrame):
         data = pd.read_csv(data)
 
     T = len(data)
     ps, qs, ys, times = [
-        data[name].values for name in [name_p, name_q, "data", "time"]
+        data[name].values for name in [name_p, name_q, "y", "time"]
     ]
 
-    # CS/CI calculations
-    confseqs = OrderedDict()
-    confseqs["cs"] = compare_forecasts(
-        data, name_p, name_q, scoring_rule, alpha,
-        use_asymptotic=False, boundary_type=boundary_type, v_opt=v_opt)
-    if "h" in compare_baselines:
-        confseqs["h"] = compare_forecasts(
-            data, name_p, name_q, scoring_rule, alpha,
-            use_hoeffding=True, boundary_type=boundary_type, v_opt=v_opt)
-    if "acs" in compare_baselines:
-        confseqs["acs"] = compare_forecasts(
-            data, name_p, name_q, scoring_rule, alpha,
-            use_asymptotic=True)
-    if "ci" in compare_baselines:
-        confseqs["ci"] = confint_lai(
+    # CS/CI & e-process calculations
+    results = compare_forecasts(
+        data, name_p, name_q,
+        scoring_rule=scoring_rule,
+        lag=lag, aligned_outcomes=aligned_outcomes,
+        alpha=alpha, boundary_type=boundary_type, v_opt=v_opt,
+        compute_e=plot_e)
+    suffixes = {"cs": ""}
+    if "h" in baselines:
+        results_h = compare_forecasts(
+            data, name_p, name_q,
+            scoring_rule=scoring_rule,
+            lag=lag, aligned_outcomes=aligned_outcomes,
+            alpha=alpha, use_hoeffding=True,
+            boundary_type=boundary_type, v_opt=v_opt,
+            compute_e=False)
+        suffixes["h"] = "_h"
+        results = results.merge(results_h, on=["time"], suffixes=(None, suffixes["h"]))
+    if "acs" in baselines:
+        results_acs = compare_forecasts(
+            data, name_p, name_q,
+            scoring_rule=scoring_rule,
+            lag=lag, aligned_outcomes=aligned_outcomes,
+            alpha=alpha, use_asymptotic=True,
+            compute_e=False)
+        suffixes["acs"] = "_acs"
+        results = results.merge(results_acs, on=["time"], suffixes=(None, suffixes["acs"]))
+    if "ci" in baselines:
+        lcbs_ci, ucbs_ci = confint_lai(
             ps, qs, ys, None, scoring_rule=scoring_rule, alpha=alpha)
+        results_ci = pd.DataFrame({
+            "time": times,
+            "lcb": lcbs_ci,
+            "ucb": ucbs_ci,
+        })
+        suffixes["ci"] = "_ci"
+        results = results.merge(results_ci, on=["time"], suffixes=(None, suffixes["ci"]))
 
     # Plot true deltas if true_probs or true_means exist in data
     if "true_probs" in data:
-        true_probs = data["true_probs"].values
+        results["true_means"] = data["true_probs"].values
     elif "true_means" in data:
-        true_probs = data["true_means"].values
-    else:
-        true_probs = None
-    if true_probs is not None:
-        true_deltas = compute_true_deltas(ps, qs, true_probs, scoring_rule)
-        logging.info(f"True Delta [T={T}]: {true_deltas[-1]:.5f}")
-    else:
-        true_deltas = None
+        results["true_means"] = data["true_means"].values
+    has_true_mean = "true_means" in results
+    if has_true_mean:
+        results["true_deltas"] = compute_true_deltas(
+            ps, qs, results["true_means"], scoring_rule)
+        logging.info(f"True Delta [T=%d]: %.5f",
+                     T, results.true_deltas.tail(1).item())
 
-    if plot_fder:
-        assert true_probs is not None
-        assert "ci" in compare_baselines
-        fder_cs, fder_ci = compute_fder(
-            data, name_p, name_q, n_repeats=n_repeats,
-            scoring_rule=scoring_rule, alpha=alpha)
+    # Diagnostics
+    if plot_diagnostics:
+        assert has_true_mean, "plotting diagnostics require having true means"
+        diagnostics = compute_diagnostics(
+            data, name_p, name_q,
+            diagnostics_fn=diagnostics_fn,
+            n_repeats=n_repeats,
+            scoring_rule=scoring_rule,
+            alpha=alpha,
+            boundary_type="stitching",  # to save time
+            baselines=diagnostics_baselines,
+        )
     else:
-        fder_cs, fder_ci = None, None
-    if plot_miscoverage:
-        assert true_probs is not None
-        assert "ci" in compare_baselines
-        miscov_cs, miscov_ci = compute_miscoverage(
-            data, name_p, name_q, n_repeats=n_repeats,
-            scoring_rule=scoring_rule, alpha=alpha)
-    else:
-        miscov_cs, miscov_ci = None, None
+        diagnostics = {}
 
-    # Plot
-    n_figures = 1 + (plot_fder or plot_miscoverage) + plot_width
-    figsize = [(8, 5), (12, 5), (16, 5)][n_figures - 1]
-    i = 0
+    # Set up grids for the plot: 1x1, 1x2, 1x3, or 2x2
+    set_theme(**theme_kwargs)
+    n_figures = 1 + plot_width + plot_e + plot_diagnostics
+    fig_properties = {
+        1: dict(nrows=1, ncols=1, figsize=(5, 4)),
+        2: dict(nrows=1, ncols=2, figsize=(12, 5)),
+        3: dict(nrows=1, ncols=3, figsize=(15, 5)),
+        4: dict(nrows=2, ncols=2, figsize=(15, 10)),
+    }
 
-    set_theme()
-    fig, axes = plt.subplots(1, n_figures, figsize=figsize, facecolor="white")
+    fig, axes = plt.subplots(**fig_properties[n_figures])
+    # constrained_layout=True, facecolor="white")
+
+    # get axes as a list
     if n_figures == 1:
         axes = [axes]
-    xscale = "log" if use_logx else "linear"
-    xlim = (10, T) if use_logx else None
-    if scoring_rule != "winkler":
-        a, b = get_scoring_rule(scoring_rule).bounds
-        lo, hi = a - b, b - a
+    elif n_figures == 4:
+        axes = [a for ax in axes for a in ax]
+
+    # set x-axis properties
+    if use_logx:
+        xscale = "log"
+        xlim = (100, T) if xlim is not None else None
     else:
+        xscale = "linear"
+
+    # compute bounds and y-axis limits based on scoring rules
+    if scoring_rule == "winkler":
         q0 = min(min(qs), min(1 - qs))
         lo, hi = 1 - 2 / q0, 1
-    y_rad = 0.6 * hi if abs(lo) == hi else 0.25 * (hi - lo) / 2
-    ylim = (-y_rad, y_rad)
+    else:
+        a, b = get_scoring_rule(scoring_rule).bounds
+        lo, hi = a - b, b - a
+    y_radius = ylim_scale * hi if abs(lo) == hi else (ylim_scale / 4) * (hi - lo)
+    ylim = (-y_radius, y_radius)
+
+    i = 0
 
     # Plot 1: confidence sequences & intervals
-    axes[i].axhline(color=COLORS["data"], alpha=0.5)
-    if true_probs is not None:
-        axes[i].plot(times, true_deltas, alpha=0.8, color=COLORS["true"],
+    # axes[i].axhline(color=COLORS["y"], alpha=0.5, linewidth=linewidth)
+    axes[i].axhline(y=0, color="black", alpha=0.5, linewidth=linewidth)
+    for name, suffix in suffixes.items():
+        axes[i].plot(times, results["ucb" + suffix],
+                     alpha=0.8, color=COLORS[name],
+                     linestyle=LINESTYLES[name], linewidth=linewidth,
+                     label=LABELS[name])
+        axes[i].plot(times, results["lcb" + suffix],
+                     alpha=0.8, color=COLORS[name],
+                     linestyle=LINESTYLES[name], linewidth=linewidth)
+    if has_true_mean:
+        axes[i].plot(times, results["true_deltas"],
+                     alpha=0.8, color=COLORS["true"],
                      linestyle=LINESTYLES["true"], linewidth=linewidth,
                      label=LABELS["true"])
-    for cs_type, (lcbs, ucbs) in confseqs.items():
-        axes[i].plot(times, ucbs, alpha=0.8, color=COLORS[cs_type],
-                     linestyle=LINESTYLES[cs_type], linewidth=linewidth,
-                     label=LABELS[cs_type])
-        axes[i].plot(times, lcbs, alpha=0.8, color=COLORS[cs_type],
-                     linestyle=LINESTYLES[cs_type], linewidth=linewidth)
+
+    cs_str = "CS/CI" if "ci" in baselines else "CS"
+    param_str = r"$\Delta_t$" if scoring_rule != "winkler" else r"$W_t$"
     axes[i].set(
         xscale=xscale,
         xlim=xlim,
         ylim=ylim,
-        xlabel="Time",
-        ylabel=(("CS/CI" if "ci" in compare_baselines else "CS") +
-                r" for $\Delta_t$"),
+        xlabel="Time" if n_figures <= 3 else None,
+        # ylabel=cs_ci + r" for $\Delta_t$",
     )
-    axes[i].legend(
-        loc="upper right" if confseqs["cs"][1][-1] < 0 else "lower right")
+    axes[i].set_title(f"{100 * (1 - alpha):g}% {cs_str} for {param_str}",
+                      fontweight="bold", fontsize="large")
+    centers = (results["ucb"].tail(1) + results["lcb"].tail(1)) / 2
+    axes[i].legend(loc="upper right" if centers.mean() < 0 else "lower right",
+                   fontsize="small")
     i += 1
 
-    # Plot 2: either miscoverage or false decision rate
-    if plot_miscoverage or plot_fder:
-        rate_cs = miscov_cs if plot_miscoverage else fder_cs
-        axes[i].plot(times, rate_cs,
-                     linestyle=LINESTYLES["cs"], linewidth=linewidth,
-                     color=COLORS["cs"], label=LABELS["cs"])
-        if "ci" in compare_baselines:
-            rate_ci = miscov_ci if plot_miscoverage else fder_ci
-            axes[i].plot(times, rate_ci,
-                         linestyle=LINESTYLES["ci"], linewidth=linewidth,
-                         color=COLORS["ci"], label=LABELS["ci"])
-        axes[i].plot(times, np.repeat(alpha, T),
-                     linestyle=LINESTYLES["data"], linewidth=linewidth,
-                     color=COLORS["data"], label="Significance Level")
-        axes[i].set(
-            xscale=xscale,
-            xlim=xlim,
-            ylim=(0, 1),
-            xlabel="Time",
-            ylabel=("Cumulative Miscoverage Rate" if plot_miscoverage
-                    else "False Decision Rate"),
-        )
-        axes[i].legend()
-        i += 1
-
-    # Plot 3: width
+    # Plot 2: CS width
     if plot_width:
-        for cs_type, (lcbs, ucbs) in confseqs.items():
-            axes[i].plot(times, ucbs - lcbs, color=COLORS[cs_type],
-                         linestyle=LINESTYLES[cs_type], linewidth=linewidth,
-                         label=LABELS[cs_type])
+        for name, suffix in suffixes.items():
+            axes[i].plot(times,
+                         results["ucb" + suffix] - results["lcb" + suffix],
+                         alpha=0.8,
+                         color=COLORS[name],
+                         linestyle=LINESTYLES[name],
+                         linewidth=linewidth,
+                         label=LABELS[name])
         axes[i].set(
             xscale=xscale,
             xlim=xlim,
-            ylim=(0, hi - lo),
-            xlabel="Time",
-            ylabel="Width of CS" + ("/CI" if "ci" in compare_baselines else ""),
+            ylim=(0, (hi - lo) * 0.3),
+            xlabel="Time" if n_figures <= 3 else None,
+            # ylabel="Width",
         )
-        axes[i].legend()
+        axes[i].set_title("Width of CS" + ("/CI" if "ci" in baselines else ""),
+                          fontweight="bold", fontsize="large")
+        axes[i].legend(fontsize="small")
         i += 1
 
+    # Plot 3: e-process
+    # horizontal line is at 2/alpha, as each e-process is one-sided.
+    if plot_e:
+        axes[i].axhline(y=1, color="black", alpha=0.5, linewidth=linewidth)
+        axes[i].axhline(y=2 / alpha, color=COLORS["y"], alpha=0.5,
+                        linestyle="dashed", linewidth=linewidth)
+        axes[i].plot(times,
+                     results["e_pq"],
+                     color=get_color_by_index(5),  # brown
+                     linestyle="solid",
+                     linewidth=linewidth,
+                     label=r"$H_0: \Delta_t \leq 0$")
+        axes[i].plot(times,
+                     results["e_qp"],
+                     color=get_color_by_index(4),  # purple
+                     linestyle="dashed",
+                     linewidth=linewidth,
+                     label=r"$H_0: \Delta_t \geq 0$")
+        axes[i].set(
+            xscale=xscale,
+            xlim=xlim,
+            yscale="log",
+            ylim=(10**-4, 10**4),
+            xlabel="Time",
+            # ylabel="E-Process (log-scale)",
+        )
+        axes[i].set_title("E-Process (log-scale)", fontweight="bold", fontsize="large")
+        axes[i].legend(loc="lower left", fontsize="small")
+        i += 1
+
+    # Plot 4: diagnostics
+    if plot_diagnostics:
+        # method can be cs, ci, dm, gw
+        for method in diagnostics:
+            # can contain NaNs
+            valid = np.isfinite(diagnostics[method])
+            axes[i].plot(times[valid], diagnostics[method][valid],
+                         linestyle=LINESTYLES[method], linewidth=linewidth,
+                         color=COLORS[method], label=LABELS[method])
+        axes[i].plot(times, np.repeat(alpha, T),
+                     linestyle=LINESTYLES["y"], linewidth=linewidth,
+                     color=COLORS["y"], label="Significance Level")
+        if diagnostics_fn == "miscoverage":
+            rate_name = "Cumulative Miscoverage Rate"
+        elif diagnostics_fn == "fder":
+            rate_name = "False Decision Rate"
+        elif diagnostics_fn == "cfdr":
+            rate_name = "Cumulative Type I Error"
+        else:
+            rate_name = "Diagnostics"
+        axes[i].set(
+            xscale=xscale,
+            xlim=xlim,
+            ylim=(-0.025, 1.025),
+            # ylim=(-0.025, 0.625),
+            xlabel="Time",
+        )
+        axes[i].set_title(rate_name, fontweight="bold", fontsize="large")
+        axes[i].legend(ncol=2, fontsize="small")
+        i += 1
+
+    # Title
     if scoring_rule == "winkler":
         score_name = "WinklerScore"
-        target_str = r"$W_t$" f"({name_p}, {name_q}), S=BrierScore"
+        target_str = r"$W_t$" f"({name_p}, {name_q}); S=BrierScore"
     else:
         score_name = get_scoring_rule(scoring_rule).name
-        target_str = r"$\Delta_t$" f"({name_p}, {name_q}), S={score_name}"
-
+        target_str = r"$\Delta_t$" f"({name_p}, {name_q}); S={score_name}"
     # str_t = f"$T=10^{np.log10(T):.2g}$" if use_logx else f"T={T}"
-    fig.suptitle(f"{(1-alpha)*100:2.0f}% Confidence Sequences on {target_str}",
-                 fontsize=13, fontweight="regular")
-    fig.tight_layout()
+    # fig.suptitle(f"{(1-alpha)*100:2.0f}% CS on {target_str}",
+    #              fontweight="regular")
+    if not no_title:
+        fig.suptitle(target_str)
+    if n_figures <= 3:
+        fig.subplots_adjust(top=0.8, wspace=0.0, hspace=0.1)
+        fig.tight_layout()
+    else:
+        fig.subplots_adjust(wspace=0.2, hspace=0.3)
+        fig.tight_layout()
+
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
         fig.savefig(os.path.join(
-            plots_dir, f"comparecast_cs_{name_p}_{name_q}_{score_name}.pdf"))
+            plots_dir, f"comparecast_cs_{name_p}_{name_q}_{score_name}.pdf"), transparent=True)
 
-    results = {
-        "time": times,
-        "data": ys,
+    # Store auxiliary info and return the results data frame along with axes
+    results.update({
+        "y": ys,
         "p": ps,
         "q": qs,
-        "true_delta": true_deltas,
-    }
-    for cs_type, (lcbs, ucbs) in confseqs.items():
-        results.update({
-            f"lcbs_{cs_type}": lcbs,
-            f"ucbs_{cs_type}": ucbs,
-        })
-    if plot_fder:
-        results.update({"fder_cs": fder_cs, "fder_ci": fder_ci})
-    if plot_miscoverage:
-        results.update({"miscov_cs": miscov_cs, "miscov_ci": miscov_ci})
-    return pd.DataFrame(results), axes
+    })
+    if plot_diagnostics:
+        for method in diagnostics:
+            results[f"{diagnostics_fn}_{method}"] = diagnostics[method]
+
+        if plots_dir:
+            import pickle
+
+            with open(os.path.join(plots_dir, "results.pkl"), "wb") as f:
+                pickle.dump(results, f)
+    return results, axes
 
 
 def plot_pairwise_comparisons(
         data: Union[str, pd.DataFrame],
         forecasters: List[str],
         scoring_rule: str = "brier",
+        lag: int = 1,
+        aligned_outcomes: bool = True,
         plots_dir: str = "./plots",
         alpha: float = 0.05,
         boundary_type: str = "mixture",
         v_opt: float = 10,
-        compare_baselines: tuple = (),
+        baselines: tuple = (),
         use_logx: bool = True,
         linewidth: int = 2,
+        xlim: tuple = None,
+        ylim_scale: float = 0.6,
+        **theme_kwargs
 ) -> plt.Axes:
     """Plot pairwise comparisons of forecasters in data.
 
@@ -391,17 +518,22 @@ def plot_pairwise_comparisons(
             (e.g., output of :py:func:`comparecast.forecasters.forecast`.)
         forecasters: list of forecasters to be compared against each other
         scoring_rule: name of the scoring rule to be used (default: brier)
+        lag: forecast lag. Currently requires compute_cs is False if lag > 1. (default: 1)
+        aligned_outcomes: whether the outcomes are aligned with the forecasts, if lag > 1.
+            (default: True)
         plots_dir: directory to store all plots (default: ./plots)
         alpha: significance level for confidence sequences (default: 0.05)
         boundary_type: type of uniform boundary used for CS (default: mixture)
         v_opt: value of intrinsic time where the boundary is optimized.
             Default is 10; set to ``None`` in *post-hoc* analyses (only)
             to optimize the boundary at the last time step.
-        compare_baselines: compare with other baselines provided, including
-            Hoeffding-style CS (``h``), asymptotic CS (``acs``), and
-            fixed-time CI (``ci``). (default: ``()``)
+        baselines: compare with other baselines provided, including
+            Hoeffding-style CS (``h``), fixed-time CI (``ci``), and
+            asymptotic CS (``acs``). (default: ``()``)
         use_logx: if true, use the logarithmic scale on the x-axis.
-        linewidth: line width.
+        linewidth: line width. (default: 2)
+        xlim: x-axis (time) limits as a tuple. (default: None)
+        ylim_scale: scale of the y-axis limit for the CS plot. (default: 0.6)
 
     Returns:
         A ``matplotlib.pyplot.Axes`` object
@@ -418,14 +550,18 @@ def plot_pairwise_comparisons(
     else:
         a, b = score.bounds
         lo, hi = a - b, b - a
+    y_radius = ylim_scale * hi if abs(lo) == hi else (ylim_scale / 4) * (hi - lo)
+    ylim = (-y_radius, y_radius)
 
     n = len(forecasters)
     if n > 5:
         logging.warning("too many pairwise comparisons for %d forecasters", n)
+
+    set_theme(**theme_kwargs)
     fig, axes = plt.subplots(n, n, figsize=(5 * n, 5 * n), facecolor="white")
     T = len(data)
     times = np.arange(1, T + 1)
-    ys = data["data"].values
+    ys = data["y"].values
     for i, name_p in enumerate(forecasters):
         for j, name_q in enumerate(forecasters):
             if i == j:
@@ -435,54 +571,90 @@ def plot_pairwise_comparisons(
             ps = data[name_p].values
             qs = data[name_q].values
 
-            # CS/CI calculations
-            confseqs = OrderedDict()
-            confseqs["cs"] = compare_forecasts(
-                data, name_p, name_q, scoring_rule, alpha,
-                boundary_type=boundary_type, v_opt=v_opt)
-            if "h" in compare_baselines:
-                confseqs["h"] = compare_forecasts(
-                    data, name_p, name_q, scoring_rule, alpha,
+            # CS/CI calculations (TODO: refactor)
+            results = compare_forecasts(
+                data, name_p, name_q,
+                scoring_rule=scoring_rule,
+                lag=lag, aligned_outcomes=aligned_outcomes,
+                alpha=alpha, boundary_type=boundary_type, v_opt=v_opt,
+                compute_e=False)
+            suffixes = {"cs": ""}
+            if "h" in baselines:
+                results_h = compare_forecasts(
+                    data, name_p, name_q,
+                    scoring_rule=scoring_rule,
+                    lag=lag, aligned_outcomes=aligned_outcomes,
+                    alpha=alpha, use_hoeffding=True,
                     boundary_type=boundary_type, v_opt=v_opt,
-                    use_hoeffding=True)
-            if "acs" in compare_baselines:
-                confseqs["acs"] = compare_forecasts(
-                    data, name_p, name_q, scoring_rule, alpha,
-                    use_asymptotic=True)
-            if "ci" in compare_baselines:
-                confseqs["ci"] = confint_lai(
+                    compute_e=False)
+                suffixes["h"] = "_h"
+                results = results.merge(results_h, on=["time"], suffixes=(None, suffixes["h"]))
+            if "acs" in baselines:
+                results_acs = compare_forecasts(
+                    data, name_p, name_q,
+                    scoring_rule=scoring_rule,
+                    lag=lag, aligned_outcomes=aligned_outcomes,
+                    alpha=alpha, use_asymptotic=True,
+                    compute_e=False)
+                suffixes["acs"] = "_acs"
+                results = results.merge(results_acs, on=["time"], suffixes=(None, suffixes["acs"]))
+            if "ci" in baselines:
+                lcbs_ci, ucbs_ci = confint_lai(
                     ps, qs, ys, None, scoring_rule=scoring_rule, alpha=alpha)
+                results_ci = pd.DataFrame({
+                    "time": times,
+                    "lcb": lcbs_ci,
+                    "ucb": ucbs_ci,
+                })
+                suffixes["ci"] = "_ci"
+                results = results.merge(results_ci, on=["time"], suffixes=(None, suffixes["ci"]))
 
-            axes[i][j].axhline(color=COLORS["data"], alpha=0.5)
-            if "true_probs" in data.columns:
-                true_probs = data["true_probs"].values
-                true_deltas = compute_true_deltas(ps, qs, true_probs,
+            # Plot true deltas if true_probs or true_means exist in data
+            if "true_probs" in data:
+                results["true_means"] = data["true_probs"].values
+            elif "true_means" in data:
+                results["true_means"] = data["true_means"].values
+            has_true_mean = "true_means" in results
+            if has_true_mean:
+                results["true_deltas"] = compute_true_deltas(
+                    ps, qs, results["true_means"], scoring_rule)
+                logging.info(f"True Delta [T=%d]: %.5f",
+                             T, results.true_deltas.tail(1).item())
+
+            # Plot the (i,j)-pair
+            axes[i][j].axhline(y=0, color="black", alpha=0.5, linewidth=linewidth)
+            if has_true_mean:
+                true_deltas = compute_true_deltas(ps, qs, results["true_means"].values,
                                                   scoring_rule)
-                axes[i][j].plot(times, true_deltas, color=COLORS["true"],
+                axes[i][j].plot(times, true_deltas,
+                                alpha=0.8, color=COLORS["true"],
                                 linestyle=LINESTYLES["true"], linewidth=linewidth,
                                 label=LABELS["true"])
-            for cs_type, (lcbs, ucbs) in confseqs.items():
-                axes[i][j].plot(times, ucbs, alpha=0.8, color=COLORS[cs_type],
-                                linestyle=LINESTYLES[cs_type], linewidth=linewidth,
-                                label=LABELS[cs_type])
-                axes[i][j].plot(times, lcbs, alpha=0.8, color=COLORS[cs_type],
-                                linestyle=LINESTYLES[cs_type], linewidth=linewidth)
-            axes[i][j].set_ylim(0.75 * lo, 0.75 * hi)
+            for name, suffix in suffixes.items():
+                axes[i][j].plot(times, results["ucb" + suffix],
+                                alpha=0.8, color=COLORS[name],
+                                linestyle=LINESTYLES[name], linewidth=linewidth,
+                                label=LABELS[name])
+                axes[i][j].plot(times, results["lcb" + suffix],
+                                alpha=0.8, color=COLORS[name],
+                                linestyle=LINESTYLES[name], linewidth=linewidth)
+            axes[i][j].set_xlim(xlim)
+            axes[i][j].set_ylim(ylim)
             if i == len(forecasters) - 1:
                 axes[i][j].set_xlabel("Time")
             if j == 0:
                 axes[i][j].set_ylabel(r"CS for $\Delta_t$")
             if use_logx:
-                axes[i][j].set_xlim(10, T)
                 axes[i][j].set_xscale("log")
-            str_t = f"$T=10^{{{np.log10(T):.2g}}}$" if use_logx else f"T={T}"
-            lcbs, ucbs = confseqs["cs"]
+            lcb = results["lcb"].tail(1).item()
+            ucb = results["ucb"].tail(1).item()
             axes[i][j].set_title(
-                r"$\Delta_t$" f"({name_p}, {name_q})"
-                f": ({lcbs[-1]:.3f}, {ucbs[-1]:.3f}) at {str_t}"
+                r"$\Delta_t$" f"({name_p}, {name_q}): ({lcb:.3f}, {ucb:.3f})"
             )
-            axes[i][j].legend(loc=("upper right" if ucbs[-1] + lcbs[-1] < 0
-                                   else "lower right"))
+            axes[i][j].legend(loc=("upper right"
+                                   if lcb + ucb < 0
+                                   else "lower right"),
+                              fontsize="small")
 
     if scoring_rule == "winkler":
         score_name = "WinklerScore"
@@ -490,10 +662,10 @@ def plot_pairwise_comparisons(
         score_name = get_scoring_rule(scoring_rule).name
     fig.suptitle(f"{(1 - alpha) * 100:2.0f}% "
                  r"Confidence Sequences on $\Delta_t$"
-                 f", S={score_name}",
-                 fontsize=20, fontweight="regular")
+                 f"; S={score_name}",
+                 fontsize="x-large")
     fig.tight_layout()
-    fig.subplots_adjust(top=0.92)
+    fig.subplots_adjust(top=0.94)
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
         fig.savefig(os.path.join(plots_dir,
@@ -567,7 +739,7 @@ def plot_mlb_forecasts(
     sns.set_palette(colors)
     ax = sns.lineplot(x="time", y="probability",
                       hue="forecasts", linewidth=2, alpha=0.7, data=df)
-    sns.scatterplot(x="time", y="win", color=COLORS["data"],
+    sns.scatterplot(x="time", y="win", color=COLORS["y"],
                     data=filtered_data, ax=ax)
 
     span0 = data[data.date == window[0]]["time"].item()
@@ -579,7 +751,7 @@ def plot_mlb_forecasts(
         xticks = []
         xticklabels = []
         suffix = (str(years[0]) if n_games is None
-                  else f"{years[0]}, last {n_games} games")
+                  else f"last {n_games} of {years[0]}")
     else:
         xticks = np.zeros_like(years)
         xticks[1:] = np.where(np.diff(filtered_data.season))[0]
@@ -588,16 +760,15 @@ def plot_mlb_forecasts(
     ax.set(
         xticks=xticks,
         xticklabels=xticklabels,
-        xlabel="Year",
-        ylabel="Probability",
+        xlabel=f"Games ({suffix})",
+        ylabel="Probability/Outcome",
         ylim=(-0.05, 1.05),
     )
     ax.set_title(
-        f"{team} Win Probability Forecasts ({suffix})" +
-        (f" (regular seasons only)" if no_playoffs else ""),
-        fontsize=14,
+        f"{team} Team Win Probability Forecasts" +
+        (f" (regular seasons only)" if no_playoffs else " (gray: playoffs)"),
     )
-    ax.legend(loc="lower right", bbox_to_anchor=(1.1, 0))
+    ax.legend(loc="lower left", fontsize="small")
     plt.tight_layout()
 
     if save_filename is not None:
@@ -609,13 +780,14 @@ def plot_weather_hz_evalues(
         evalues: pd.DataFrame,
         use_preset_theme: bool = True,
         save_filename: str = None,
+        **theme_kwargs,
 ):
     """Reproduces Figure 3 from Henzi & Ziegel (2021).
 
     A/B: A is not better than B under the null hypothesis
     """
     if use_preset_theme:
-        set_theme()
+        set_theme(**theme_kwargs)
 
     fg = sns.relplot(
         x="Date",
@@ -633,10 +805,10 @@ def plot_weather_hz_evalues(
         ax.set(
             xlabel="Year",
             yscale="log",
-            ylim=(10 ** -4, 10 ** 4)
+            ylim=(1e-2, 1e4)
         )
-        ax.axhline(y=1, linestyle="-", color="black")
-        ax.axhline(y=10, linestyle="--", color="gray")
+        ax.axhline(y=1, linewidth=2, linestyle="-", color="black")
+        ax.axhline(y=20, linewidth=2, linestyle="--", color="gray")
 
     if save_filename is not None:
         os.makedirs(os.path.dirname(save_filename), exist_ok=True)
@@ -646,40 +818,86 @@ def plot_weather_hz_evalues(
 def plot_weather_comparison(
         data_dir: str = "eprob/replication_material/precip_fcs",
         lag: int = 1,
+        lagged_null: str = "pw",
         scoring_rule: str = "brier",
         alpha: float = 0.1,
         v_opt: float = 0.5,
         c: float = 0.1,
+        compute_cs: bool = True,
+        compute_e: bool = True,
+        no_calibration: bool = False,
+        calibration_strategy: str = "mixture",
+        use_hz: bool = False,
+        alt_prob: float = 0.75,
         plots_dir: str = "./plots/weather",
         use_preset_theme: bool = True,
+        ylim_scale: float = 0.05,
+        **theme_kwargs,
 ):
     """Produces CS and e-value plots for the weather forecast comparison.
 
     Also returns a dataframe containing the CS and the e-values.
+
+    If use_hz is True, uses Henzi and Ziegel's e-process
+    for conditional forecast dominance (strong null), and no CS is provided.
     """
     assert lag in LAGS, f"invalid lag {lag}, available: {LAGS}"
 
     if use_preset_theme:
-        set_theme()
+        set_theme(**theme_kwargs)
 
     df_rows = []
     pairs = [("hclr", "idr"), ("idr", "hclr_noscale"), ("hclr", "hclr_noscale")]
     for airport in AIRPORTS:
         pop_fcs = read_precip_fcs(data_dir, pop_only=True)
-        pop_fcs = pop_fcs[(pop_fcs["airport"] == airport)
-                          & (pop_fcs["lag"] == lag)]
+        pop_fcs = pop_fcs[(pop_fcs["airport"] == airport) &
+                          (pop_fcs["lag"] == lag)].sort_values(["date"], ascending=True)
         for name_p, name_q in pairs:
             try:
-                lcbs, ucbs, evalues = compare_forecasts(
-                    pop_fcs,
-                    name_p,
-                    name_q,
-                    scoring_rule=scoring_rule,
-                    alpha=alpha,
-                    compute_evalues=True,
-                    v_opt=v_opt,
-                    c=c,
-                )
+                if use_hz:
+                    assert 0 < alt_prob < 1, "alt_prob should be within (0, 1)"
+                    T = len(pop_fcs)
+                    ps, qs, ys = [
+                        pop_fcs[name].values for name in [name_p, name_q, "y"]
+                    ]
+                    e_pq = eprocess_hz(
+                        ps, qs, ys,
+                        aligned_outcomes=True,
+                        scoring_rule=scoring_rule,
+                        lag=lag,
+                        alt_prob=alt_prob,
+                    )
+                    e_qp = eprocess_hz(
+                        qs, ps, ys,
+                        aligned_outcomes=True,
+                        scoring_rule=scoring_rule,
+                        lag=lag,
+                        alt_prob=alt_prob,
+                    )
+                    results = pd.DataFrame({
+                        "time": np.arange(1, T + 1),
+                        "e_pq": e_pq,
+                        "e_qp": e_qp,
+                        "lcb": None,
+                        "ucb": None,
+                    })
+                else:
+                    results = compare_forecasts(
+                        pop_fcs,
+                        name_p,
+                        name_q,
+                        scoring_rule=scoring_rule,
+                        lag=lag,
+                        lagged_null=lagged_null,
+                        aligned_outcomes=True,
+                        compute_cs=compute_cs and lag == 1,
+                        alpha=alpha,
+                        compute_e=compute_e,
+                        v_opt=v_opt,
+                        c=c,
+                        no_calibration=no_calibration,
+                        calibration_strategy=calibration_strategy,
+                    )
             except ValueError:
                 raise ValueError(f"{airport}, {lag}, {name_p}, {name_q}")
             name_p, name_q = [
@@ -691,7 +909,7 @@ def plot_weather_comparison(
                 for name in [name_p, name_q]
             ]
             for date, lcb, ucb, evalue in zip(
-                    pop_fcs.date, lcbs, ucbs, evalues):
+                    pop_fcs.date, results.lcb, results.ucb, results.e_pq):
                 df_rows.extend([
                     {
                         "Airport": airport,
@@ -704,51 +922,54 @@ def plot_weather_comparison(
                     for otype, value in zip(["LCB", "UCB", "E-value"],
                                             [lcb, ucb, evalue])
                 ])
-    confseqs = pd.DataFrame(df_rows)
+    results = pd.DataFrame(df_rows)
 
     # Plot 1: CS
-    fg = sns.relplot(
-        x="Date",
-        y="Value",
-        col="Hypothesis",
-        hue="Airport",
-        style="Airport",
-        size="OutputType",
-        sizes=[2, 2],
-        kind="line",
-        height=5,
-        aspect=1,
-        data=confseqs[confseqs["OutputType"] != "E-value"],
-    )
-    for ax, (name_p, name_q) in zip(fg.axes[0], pairs):
-        name_p, name_q = [
-            {
-                "idr": "IDR",
-                "hclr": "HCLR",
-                "hclr_noscale": "HCLR_",
-            }[name]
-            for name in [name_p, name_q]
-        ]
-        ax.set(
-            xlabel="Year",
-            ylabel=r"CS for $\Delta_t$",
-            title=f"{100*(1-alpha):g}% CS on " r"$\Delta_t$"
-                  f"({name_p}, {name_q})",
-            ylim=(-.075, .075)
+    if not use_hz and (compute_cs and lag == 1):
+        fg = sns.relplot(
+            x="Date",
+            y="Value",
+            col="Hypothesis",
+            hue="Airport",
+            style="Airport",
+            size="OutputType",
+            sizes=[2, 2],
+            kind="line",
+            height=5,
+            aspect=1,
+            linewidth=2,
+            data=results[results["OutputType"] != "E-value"],
         )
-        ax.axhline(y=0, linestyle="-", color="black")
+        for ax, (name_p, name_q) in zip(fg.axes[0], pairs):
+            name_p, name_q = [
+                {
+                    "idr": "IDR",
+                    "hclr": "HCLR",
+                    "hclr_noscale": "HCLR_",
+                }[name]
+                for name in [name_p, name_q]
+            ]
+            ax.set(
+                xlabel="Year",
+                ylabel=r"CS for $\Delta_t$",
+                title=f"{100*(1-alpha):g}% CS on " r"$\Delta_t$"
+                      f"({name_p}, {name_q})",
+                ylim=(-ylim_scale, ylim_scale)
+            )
+            ax.axhline(y=0, linewidth=2, linestyle="-", color="black")
 
-    # remove unnecessary legend items
-    for handle, text in zip(fg._legend.legendHandles[5:],
-                            fg._legend.texts[5:]):
-        handle.set_data([], [])
-        text.set_text("")
+        # remove unnecessary legend items
+        for handle, text in zip(fg._legend.legendHandles[5:],
+                                fg._legend.texts[5:]):
+            handle.set_data([], [])
+            text.set_text("")
 
-    if plots_dir:
-        os.makedirs(plots_dir, exist_ok=True)
-        plt.savefig(os.path.join(plots_dir, f"comparecast_cs_lag{lag}.pdf"))
+        if plots_dir:
+            os.makedirs(plots_dir, exist_ok=True)
+            plt.savefig(os.path.join(plots_dir, f"comparecast_cs_lag{lag}.pdf"),
+                        bbox_inches="tight", transparent=True)
 
-    # Plot 2: e-values
+    # Plot 2: e-processes
     fg = sns.relplot(
         x="Date",
         y="Value",
@@ -759,7 +980,7 @@ def plot_weather_comparison(
         height=5,
         aspect=1,
         linewidth=2,
-        data=confseqs[confseqs["OutputType"] == "E-value"],
+        data=results[results["OutputType"] == "E-value"],
     )
     for ax, (name_p, name_q) in zip(fg.axes[0], pairs):
         name_p, name_q = [
@@ -772,18 +993,20 @@ def plot_weather_comparison(
         ]
         ax.set(
             xlabel="Year",
-            ylabel=r"E-values",
-            title=(f"E-values against " r"$H_0: \Delta_t$" 
-                   f"({name_p}, {name_q})" r"$\leq 0$"),
+            ylabel=r"E-Process (log-scale)",
+            title=r"$H_0: \delta_t$" f"({name_p}, {name_q})" r"$\leq 0,\; \forall t$" if use_hz
+                   else r"$H_0: \Delta_t$" f"({name_p}, {name_q})" r"$\leq 0,\; \forall t$",
             yscale="log",
-            ylim=(1e-4, 1e4),
+            ylim=(1e-2, 1e4),
         )
-        ax.axhline(y=1, linestyle="-", color="black")
-        ax.axhline(y=10, linestyle="--", color="gray")
+        ax.axhline(y=1, linewidth=2, linestyle="-", color="black")
+        ax.axhline(y=2/alpha, linewidth=2, linestyle="--", color="gray")
 
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
+        hz_str = "hz_" if use_hz else ""
         plt.savefig(
-            os.path.join(plots_dir, f"comparecast_evalues_lag{lag}.pdf"))
+            os.path.join(plots_dir, f"comparecast_evalues_{hz_str}lag{lag}.pdf"),
+            bbox_inches="tight", transparent=True)
 
-    return confseqs
+    return results

@@ -137,3 +137,7 @@ dmypy.json
 # Project-specific
 plots_legacy/
 nb_legacy/
+data/*.xlsx
+data/*.csv
+docs/
+.Rproj.user

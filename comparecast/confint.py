@@ -39,13 +39,14 @@ def confint_lai(
     assert ps.shape == qs.shape == ys.shape
     assert 0 <= alpha <= 1
 
-    score = get_scoring_rule(scoring_rule)
-
     T = len(ps)
     times = np.arange(1, T + 1)
     if scoring_rule == "winkler":
-        fsds = np.cumsum(score(ps, ys, cs=qs)) / times
+        score = get_scoring_rule("brier")
+        skill_score = get_scoring_rule("winkler")
+        fsds = np.cumsum(skill_score(ps, qs, ys, base_score=score)) / times
     else:
+        score = get_scoring_rule(scoring_rule)
         fsds = np.cumsum(score(ps, ys) - score(qs, ys)) / times
 
     # variance: use true_probs if known
@@ -54,10 +55,9 @@ def confint_lai(
            (score(qs, all_ones) - score(qs, all_zeros))) ** 2
     if scoring_rule == "winkler":
         # qs is assumed to be the baseline forecaster
-        s = get_scoring_rule("brier")
         lsq = np.where(ps >= qs,
-                       s(ps, all_ones) - s(qs, all_ones),
-                       s(ps, all_zeros) - s(qs, all_zeros)) ** 2
+                       score(ps, all_ones) - score(qs, all_ones),
+                       score(ps, all_zeros) - score(qs, all_zeros)) ** 2
         lsq = np.where(lsq != 0, lsq, 1e-8)
     else:
         lsq = 1.0

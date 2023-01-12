@@ -2,6 +2,7 @@
 Cumulant generating functions (CGFs) used for exponential supermartingales
 """
 
+from typing import Union
 import numpy as np
 from numpy.typing import ArrayLike
 
@@ -19,9 +20,9 @@ def _check_lambda_bound(
         hi: float = np.inf,
 ):
     """Check lo <= lambdas < hi."""
-    lambdas = np.atleast_1d(lambdas)
-    assert np.logical_and(lo <= lambdas, lambdas < hi).all(), (
-        f"lambdas out of bounds ({lo}, {hi}): {min(lambdas)}, {max(lambdas)}"
+    lambdas, lo, hi = [np.atleast_1d(inp) for inp in [lambdas, lo, hi]]
+    assert (lo <= lambdas).all() and (lambdas <= hi).all(), (
+        f"lambdas out of bounds: {min(lambdas)}, {max(lambdas)}"
     )
 
 
@@ -46,9 +47,11 @@ def cgf_poisson(lambdas: ArrayLike, c: float = 1, **kwargs):
     return (np.exp(c * lambdas) - c * lambdas - 1) / (c ** 2)
 
 
-def cgf_exponential(lambdas: ArrayLike, c: float = 0.5, **kwargs):
+def cgf_exponential(lambdas: Union[float, ArrayLike],
+                    c: Union[float, ArrayLike] = 0.5,
+                    **kwargs):
     """CGF of a centered exponential random variable with scale parameter c."""
-    _check_lambda_bound(lambdas, 0, 1 / c if c > 0 else np.inf)
+    _check_lambda_bound(lambdas, 0, 1 / np.where(c > 0, c, np.inf))
     return (-np.log(1 - c * lambdas) - c * lambdas) / (c ** 2)
 
 

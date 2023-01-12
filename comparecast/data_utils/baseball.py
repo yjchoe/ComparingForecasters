@@ -71,7 +71,7 @@ def _preprocess_team_538(
                    (data["score1"] > data["score2"]) |
                    (data["team2"] == team) &
                    (data["score1"] < data["score2"])).astype(int)
-    data["data"] = data["win"]
+    data["y"] = data["win"]
     date_to_index = {date: i for i, date in enumerate(data["date"], 1)}
     data["time"] = [date_to_index[date] for date in data["date"]]
 
@@ -139,7 +139,7 @@ def preprocess_mlb_baselines(
 
     for team in tqdm(TEAM_CODES, desc="processing baselines for each team"):
         team_data = _preprocess_team_538(data, team, [])
-        ys = team_data["data"].values
+        ys = team_data["y"].values
         years = sorted(team_data.season.unique())
         season_starts = np.zeros_like(years)
         season_starts[1:] = np.where(np.diff(team_data.season))[0]

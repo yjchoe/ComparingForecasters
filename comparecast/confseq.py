@@ -2,7 +2,7 @@
 Confidence sequences for probability forecasts
 """
 
-from typing import Tuple, NamedTuple
+from typing import NamedTuple
 import numpy as np
 
 from confseq import boundaries
@@ -110,6 +110,8 @@ def confseq_eb(
         alpha: float = 0.05,
         lo: float = 0.,
         hi: float = 1.,
+        lcb_only: bool = False,
+        ucb_only: bool = False,
         gammas: np.ndarray = None,
         boundary_type: str = "mixture",
         v_opt: float = 10.,
@@ -124,11 +126,18 @@ def confseq_eb(
     Corresponds to Theorem 2 in Choe and Ramdas (2021),
     as well as Theorem 4 in Howard et al. (2021).
 
+    For the one-sided version (`lcb_only` or `ucb_only`),
+    see Proposition 1 and 2 from Choe and Ramdas (2021).
+
     Args:
         xs: Input sequence of bounded random variables.
         alpha: Significance level.
         lo: Lower bound on the input random variables.
         hi: Upper bound on the input random variables.
+        lcb_only: Compute a one-sided CS with the lower confidence bound only.
+            MUST provide the scale parameter `c`, as `hi` is unused.
+        ucb_only: Compute a one-sided CS with the upper confidence bound only.
+            MUST provide the scale parameter `c`, as `lo` is unused.
         gammas: (optional) A predictable sequence of x's used as centers
             when computing intrinsic time. Corresponds to gamma in Theorem 2.
             Defaults to `mean(xs)` shifted back by 1.
@@ -143,11 +152,23 @@ def confseq_eb(
             distributed over epochs
         eta: (``stitching`` only) controls the spacing of epochs
         c: scale parameter for the exponential CGF.
-            By default (None), uses hi - lo.
+            By default, uses hi - lo.
 
     Returns:
         A tuple with the lower and upper confidence bounds.
     """
+    if lcb_only or ucb_only:
+        assert not (lcb_only and ucb_only), \
+            "cannot set both lcb_only and ucb_only to True"
+        assert c is not None and c > 0, \
+            "must provide the scale parameter c if lcb_only or ucb_only"
+        if lcb_only:
+            assert np.isfinite(lo)
+            hi = np.inf
+        if ucb_only:
+            assert np.isfinite(hi)
+            lo = -np.inf
+
     check_bounds(xs, lo, hi)
 
     # Sample mean (centers)
@@ -157,26 +178,36 @@ def confseq_eb(
     # Sample variance (estimate of intrinsic time)
     if gammas is None:
         gammas = mus.copy()
-        gammas[1:], gammas[0] = mus[:-1], mus[0]
+        gammas[1:], gammas[0] = mus[:-1], 0.0
+        if lcb_only:
+            gammas = np.minimum(lo + c, gammas)
+        if ucb_only:
+            gammas = np.maximum(hi - c, gammas)
     vs = np.maximum(1., np.cumsum((xs - gammas) ** 2))
 
     # Sub-exponential uniform boundary (scale c)
     c = c if c is not None else hi - lo
     v_opt = v_opt if v_opt is not None else vs[-1]
+    alpha = alpha if lcb_only or ucb_only else alpha / 2
     if boundary_type.lower() == "stitching":
         radii = boundaries.poly_stitching_bound(
-            vs, alpha / 2, v_opt, c=c, s=s, eta=eta,
+            vs, alpha, v_opt, c=c, s=s, eta=eta,
         ) / ts
     elif boundary_type.lower() == "mixture":
         radii = boundaries.gamma_exponential_mixture_bound(
-            vs, alpha / 2, v_opt, c=c, alpha_opt=alpha / 2,
+            vs, alpha, v_opt, c=c, alpha_opt=alpha,
         ) / ts
     else:
         raise ValueError(
             f"boundary_type must be either 'stitching' or 'mixture'"
             f" (given: {boundary_type})"
         )
-    return ConfSeq(mus - radii, mus + radii)
+    if lcb_only:
+        return ConfSeq(mus - radii, mus + np.inf)
+    elif ucb_only:
+        return ConfSeq(mus - np.inf, mus + radii)
+    else:
+        return ConfSeq(mus - radii, mus + radii)
 
 
 """
@@ -286,7 +317,7 @@ Asymptotic Confidence Sequences (Waudby-Smith et al., 2021)
 
 These bounds are centered around the sample mean of observations.
 They only hold asymptotic guarantees and require independence of observations,
-but they tend to work well in practice.
+although they seem to work well in practice.
 """
 
 
@@ -294,26 +325,23 @@ def confseq_asymptotic(
         xs: np.ndarray,
         alpha: float = 0.05,
         gammas: np.ndarray = None,
-        t_star: int = None,
+        t_star: int = 100,
         assume_iid: bool = False,
         **kwargs
 ) -> ConfSeq:
-    """Compute the asymptotic (1-alpha)-confidence sequence given by
-    Waudby-Smith et al. (2021).
+    """Compute the asymptotic (1-alpha)-confidence sequence
+    for independent data, given by Waudby-Smith et al. (2022).
 
-    The width of the CS is optimized at t_star.
-    For the non-iid case, we use an upper bound of the variance that works for
-    bounded random variables (see Section C.2).
+    The width of the CS is optimized at t_star (default: 1000).
+    The non-iid case is used as default (Lindeberg-type AsympCS, Thm 2.3).
     """
     t = len(xs)
-    if t_star is None:
-        # heuristic: midpoint in log-scale
-        t_star = 10 ** (np.log10(t) / 2)
 
-    # optimal width at t_star
-    # rhosq = (2 * np.log(1 / alpha) + np.log(1 + 2 * np.log(1 / alpha))) / t_star
-    rhosq = (-alpha ** 2 - 2 * np.log(alpha)
-             + np.log(-2 * np.log(alpha) + 1 - alpha ** 2)) / t_star
+    # optimal width at t_star (approximate, equation 74)
+    rhosq = (2 * np.log(1 / alpha) + np.log(1 + 2 * np.log(1 / alpha))) / t_star
+    # exact
+    # rhosq = (-alpha ** 2 - 2 * np.log(alpha)
+    #          + np.log(-2 * np.log(alpha) + 1 - alpha ** 2)) / t_star
 
     # Sample means at each time
     times = np.arange(1, t + 1)
@@ -322,7 +350,7 @@ def confseq_asymptotic(
     # Use sample variance (with running average as centers) for both cases
     if gammas is None:
         gammas = mus.copy()
-        gammas[1:], gammas[0] = mus[:-1], mus[0]
+        gammas[1:], gammas[0] = mus[:-1], 0.0
     vs = np.maximum(1., np.cumsum((xs - gammas) ** 2)) / times
     # IID: apply Theorem 1
     if assume_iid:
@@ -330,7 +358,7 @@ def confseq_asymptotic(
             vs * 2 * (rhosq * times + 1) / (rhosq * times ** 2) *
             np.log(np.sqrt(rhosq * times + 1) / alpha)
         )
-    # Non-IID: apply Theorem 6
+    # Non-IID: apply Theorem 2.3
     else:
         radii = np.sqrt(
             2 * (rhosq * times * vs + 1) / (rhosq * times ** 2) *
