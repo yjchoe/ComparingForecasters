@@ -117,15 +117,17 @@ for (i in seq(1, 20)) {
 #-------------------------------------------------------------------------------
 # E-values
 
+tp <- "brier"
 plot_dat <- precip_scores %>%
     ungroup() %>%
-    filter(lag == 1) %>%
+    #filter(lag == 1) %>%
     unnest(cols = validation) %>%
-    full_join(filter(precip_dates, lag == 1), by = c("airport", "lag", "date")) %>%
-    group_by(airport) %>%
+    #full_join(filter(precip_dates, lag == 1), by = c("airport", "lag", "date")) %>%
+    full_join(filter(precip_dates), by = c("airport", "lag", "date")) %>%
+    group_by(airport, lag) %>%
     arrange(date) %>%
     mutate(y = as.numeric(obs > 0)) %>%
-    group_by(airport) %>%
+    group_by(airport, lag) %>%
     mutate(
         H3 = cumprod(replace_na(evalue(
             y = y,
