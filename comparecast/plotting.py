@@ -1004,9 +1004,9 @@ def plot_weather_comparison(
 
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
-        hz_str = "hz_" if use_hz else ""
+        evalue_type = "hz" if use_hz else lagged_null
         plt.savefig(
-            os.path.join(plots_dir, f"comparecast_evalues_{hz_str}lag{lag}.pdf"),
+            os.path.join(plots_dir, f"comparecast_evalues_{evalue_type}_lag{lag}.pdf"),
             bbox_inches="tight", transparent=True)
 
     return results
