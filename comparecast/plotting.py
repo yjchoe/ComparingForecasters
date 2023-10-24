@@ -58,8 +58,10 @@ def plot_forecasts(
         plots_dir: str = "./plots",
         use_logx: bool = True,
         figsize: Tuple[int, int] = (12, 5),
-        linewidth: float = 2,
+        linewidth: float = 3,
         legend_out: bool = True,
+        savefig_ext: str = "pdf",
+        savefig_dpi: float = 300,
         **theme_kwargs
 ):
     """Plot forecasts along with the dataset.
@@ -92,16 +94,20 @@ def plot_forecasts(
     set_theme(**theme_kwargs)
     colors = get_colors()
     normal_colors = colors[:3] + colors[4:7] + colors[8:]  # remove red, gray
+    gray = colors[7]
+    linestyles = ["solid", "dashed", "dotted", "dashdot"]
     plt.figure(figsize=figsize, facecolor="white")
     if "true_probs" in data.columns:
-        plt.scatter(data.time, data.true_probs, marker=".", alpha=0.7,
-                    color=colors[7], label=r"reality ($r_t$)")
+        plt.scatter(data.time, data.true_probs, marker=".", alpha=0.3,
+                    color=gray, label=r"reality ($r_t$)")
     elif "y" in data.columns:
-        plt.scatter(data.time, data.y, marker=".", alpha=0.7,
-                    color=colors[7], label=r"data ($y_t$)")
+        plt.scatter(data.time, data.y, marker=".", alpha=0.3,
+                    color=gray, label=r"data ($y_t$)")
     for i, name in enumerate(forecasters):
-        plt.plot(data.time, data[name], linewidth=linewidth, alpha=0.9,
-                 color=normal_colors[i % len(normal_colors)], label=name)
+        plt.plot(data.time, data[name], linewidth=linewidth, alpha=0.8,
+                 color=normal_colors[i % len(normal_colors)],
+                 linestyle=linestyles[i % len(linestyles)],
+                 label=name)
     plt.title("Forecasters", fontsize="large")
     plt.xlabel("Time")
     plt.ylabel("Probability Forecast")
@@ -110,13 +116,17 @@ def plot_forecasts(
         plt.xscale("log")
         plt.xlim(10, len(data))
     if legend_out:
-        plt.legend(loc="lower right", bbox_to_anchor=(1.35, 0), frameon=False)
+        plt.legend(loc="lower right", bbox_to_anchor=(1.32, 0), frameon=False)
     else:
         plt.legend(loc="best")
     plt.tight_layout()
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
-        plt.savefig(os.path.join(plots_dir, "forecasters.pdf"))
+        plt.savefig(
+            os.path.join(plots_dir, f"forecasters.{savefig_ext}"),
+            dpi=savefig_dpi,
+            transparent=True,
+        )
 
 
 LABELS = {
@@ -143,11 +153,12 @@ LINESTYLES = {
     "y": "solid",
     "true": "solid",
     "cs": "solid",
-    "h": "dotted",
+    "h": "dashdot",
     "acs": "dashed",
-    "ci": "dashdot",
-    "dm": "dotted",
-    "gw": "dotted",
+    "ci": "dotted",
+    # not to be used alongside acs/h
+    "dm": "dashed",
+    "gw": "dashdot",
 }
 
 
@@ -174,6 +185,8 @@ def plot_comparison(
         xlim: tuple = None,
         ylim_scale: float = 0.6,
         no_title: bool = False,
+        savefig_ext: str = "pdf",
+        savefig_dpi: float = 300,
         **theme_kwargs
 ) -> Tuple[pd.DataFrame, plt.Axes]:
     """Compare two sequential forecasters by plotting
@@ -291,7 +304,8 @@ def plot_comparison(
             n_repeats=n_repeats,
             scoring_rule=scoring_rule,
             alpha=alpha,
-            boundary_type="stitching",  # to save time
+            # boundary_type="stitching",  # to save time
+            boundary_type="mixture",
             baselines=diagnostics_baselines,
         )
     else:
@@ -349,7 +363,7 @@ def plot_comparison(
     if has_true_mean:
         axes[i].plot(times, results["true_deltas"],
                      alpha=0.8, color=COLORS["true"],
-                     linestyle=LINESTYLES["true"], linewidth=linewidth,
+                     linestyle=LINESTYLES["true"], linewidth=linewidth + 2,  # to distinguish with cs
                      label=LABELS["true"])
 
     cs_str = "CS/CI" if "ci" in baselines else "CS"
@@ -365,7 +379,7 @@ def plot_comparison(
                       fontweight="bold", fontsize="large")
     centers = (results["ucb"].tail(1) + results["lcb"].tail(1)) / 2
     axes[i].legend(loc="upper right" if centers.mean() < 0 else "lower right",
-                   fontsize="small")
+                   fontsize="medium")
     i += 1
 
     # Plot 2: CS width
@@ -381,33 +395,34 @@ def plot_comparison(
         axes[i].set(
             xscale=xscale,
             xlim=xlim,
-            ylim=(0, (hi - lo) * 0.3),
+            ylim=(0, (hi - lo) * 0.25),
             xlabel="Time" if n_figures <= 3 else None,
             # ylabel="Width",
         )
         axes[i].set_title("Width of CS" + ("/CI" if "ci" in baselines else ""),
                           fontweight="bold", fontsize="large")
-        axes[i].legend(fontsize="small")
+        axes[i].legend(ncol=2 if n_figures in [2, 4] else 1,
+                       fontsize="medium")
         i += 1
 
     # Plot 3: e-process
     # horizontal line is at 2/alpha, as each e-process is one-sided.
     if plot_e:
         axes[i].axhline(y=1, color="black", alpha=0.5, linewidth=linewidth)
-        axes[i].axhline(y=2 / alpha, color=COLORS["y"], alpha=0.5,
-                        linestyle="dashed", linewidth=linewidth)
+        axes[i].axhline(y=2 / alpha, color=COLORS["y"], alpha=0.8,
+                        linestyle="dotted", linewidth=1.5)
         axes[i].plot(times,
                      results["e_pq"],
                      color=get_color_by_index(5),  # brown
-                     linestyle="solid",
+                     linestyle="dashed",
                      linewidth=linewidth,
-                     label=r"$H_0: \Delta_t \leq 0$")
+                     label=r"$H_0: \Delta_t \leq 0, \forall t$")
         axes[i].plot(times,
                      results["e_qp"],
                      color=get_color_by_index(4),  # purple
-                     linestyle="dashed",
+                     linestyle="solid",
                      linewidth=linewidth,
-                     label=r"$H_0: \Delta_t \geq 0$")
+                     label=r"$H_0: \Delta_t \geq 0, \forall t$")
         axes[i].set(
             xscale=xscale,
             xlim=xlim,
@@ -417,11 +432,14 @@ def plot_comparison(
             # ylabel="E-Process (log-scale)",
         )
         axes[i].set_title("E-Process (log-scale)", fontweight="bold", fontsize="large")
-        axes[i].legend(loc="lower left", fontsize="small")
+        axes[i].legend(loc="lower left", fontsize="medium")
         i += 1
 
     # Plot 4: diagnostics
     if plot_diagnostics:
+        # significance level
+        axes[i].axhline(y=alpha, color=COLORS["y"], alpha=0.8,
+                        linestyle="dotted", linewidth=1.5)
         # method can be cs, ci, dm, gw
         for method in diagnostics:
             # can contain NaNs
@@ -429,9 +447,9 @@ def plot_comparison(
             axes[i].plot(times[valid], diagnostics[method][valid],
                          linestyle=LINESTYLES[method], linewidth=linewidth,
                          color=COLORS[method], label=LABELS[method])
-        axes[i].plot(times, np.repeat(alpha, T),
-                     linestyle=LINESTYLES["y"], linewidth=linewidth,
-                     color=COLORS["y"], label="Significance Level")
+        # axes[i].plot(times, np.repeat(alpha, T),
+        #              linestyle=LINESTYLES["y"], linewidth=linewidth,
+        #              color=COLORS["y"], label="Significance Level")
         if diagnostics_fn == "miscoverage":
             rate_name = "Cumulative Miscoverage Rate"
         elif diagnostics_fn == "fder":
@@ -448,7 +466,8 @@ def plot_comparison(
             xlabel="Time",
         )
         axes[i].set_title(rate_name, fontweight="bold", fontsize="large")
-        axes[i].legend(ncol=2, fontsize="small")
+        axes[i].legend(ncol=2 if n_figures in [2, 4] else 1,
+                       fontsize="medium")
         i += 1
 
     # Title
@@ -472,8 +491,11 @@ def plot_comparison(
 
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
-        fig.savefig(os.path.join(
-            plots_dir, f"comparecast_cs_{name_p}_{name_q}_{score_name}.pdf"), transparent=True)
+        fig.savefig(
+            os.path.join(plots_dir, f"comparecast_cs_{name_p}_{name_q}_{score_name}.{savefig_ext}"),
+            dpi=savefig_dpi,
+            transparent=True,
+        )
 
     # Store auxiliary info and return the results data frame along with axes
     results.update({
@@ -507,7 +529,9 @@ def plot_pairwise_comparisons(
         use_logx: bool = True,
         linewidth: int = 2,
         xlim: tuple = None,
-        ylim_scale: float = 0.6,
+        ylim_scale: float = 0.4,
+        savefig_ext: str = "pdf",
+        savefig_dpi: float = 300,
         **theme_kwargs
 ) -> plt.Axes:
     """Plot pairwise comparisons of forecasters in data.
@@ -533,7 +557,7 @@ def plot_pairwise_comparisons(
         use_logx: if true, use the logarithmic scale on the x-axis.
         linewidth: line width. (default: 2)
         xlim: x-axis (time) limits as a tuple. (default: None)
-        ylim_scale: scale of the y-axis limit for the CS plot. (default: 0.6)
+        ylim_scale: scale of the y-axis limit for the CS plot. (default: 0.4)
 
     Returns:
         A ``matplotlib.pyplot.Axes`` object
@@ -558,10 +582,14 @@ def plot_pairwise_comparisons(
         logging.warning("too many pairwise comparisons for %d forecasters", n)
 
     set_theme(**theme_kwargs)
-    fig, axes = plt.subplots(n, n, figsize=(5 * n, 5 * n), facecolor="white")
+    fig, axes = plt.subplots(n, n, figsize=(5 * n, 4 * n), facecolor="white")
     T = len(data)
     times = np.arange(1, T + 1)
     ys = data["y"].values
+
+    # for global legend
+    handles = []
+
     for i, name_p in enumerate(forecasters):
         for j, name_q in enumerate(forecasters):
             if i == j:
@@ -626,18 +654,30 @@ def plot_pairwise_comparisons(
             if has_true_mean:
                 true_deltas = compute_true_deltas(ps, qs, results["true_means"].values,
                                                   scoring_rule)
-                axes[i][j].plot(times, true_deltas,
-                                alpha=0.8, color=COLORS["true"],
-                                linestyle=LINESTYLES["true"], linewidth=linewidth,
-                                label=LABELS["true"])
+                lines = axes[i][j].plot(
+                    times, true_deltas,
+                    alpha=0.8, color=COLORS["true"],
+                    linestyle=LINESTYLES["true"], linewidth=linewidth + 2,
+                    label=LABELS["true"],
+                )
+                if (i, j) == (0, 1):
+                    handles.append(lines[0])
             for name, suffix in suffixes.items():
-                axes[i][j].plot(times, results["ucb" + suffix],
-                                alpha=0.8, color=COLORS[name],
-                                linestyle=LINESTYLES[name], linewidth=linewidth,
-                                label=LABELS[name])
-                axes[i][j].plot(times, results["lcb" + suffix],
-                                alpha=0.8, color=COLORS[name],
-                                linestyle=LINESTYLES[name], linewidth=linewidth)
+                # ucb
+                lines = axes[i][j].plot(
+                    times, results["ucb" + suffix],
+                    alpha=0.8, color=COLORS[name],
+                    linestyle=LINESTYLES[name], linewidth=linewidth,
+                    label=LABELS[name],
+                )
+                # lcb
+                axes[i][j].plot(
+                    times, results["lcb" + suffix],
+                    alpha=0.8, color=COLORS[name],
+                    linestyle=LINESTYLES[name], linewidth=linewidth,
+                )
+                if (i, j) == (0, 1):
+                    handles.append(lines[0])
             axes[i][j].set_xlim(xlim)
             axes[i][j].set_ylim(ylim)
             if i == len(forecasters) - 1:
@@ -651,10 +691,10 @@ def plot_pairwise_comparisons(
             axes[i][j].set_title(
                 r"$\Delta_t$" f"({name_p}, {name_q}): ({lcb:.3f}, {ucb:.3f})"
             )
-            axes[i][j].legend(loc=("upper right"
-                                   if lcb + ucb < 0
-                                   else "lower right"),
-                              fontsize="small")
+            # axes[i][j].legend(loc=("upper right"
+            #                        if lcb + ucb < 0
+            #                        else "lower right"),
+            #                   fontsize="small")
 
     if scoring_rule == "winkler":
         score_name = "WinklerScore"
@@ -665,11 +705,17 @@ def plot_pairwise_comparisons(
                  f"; S={score_name}",
                  fontsize="x-large")
     fig.tight_layout()
-    fig.subplots_adjust(top=0.94)
+    fig.subplots_adjust(top=0.92)
+    # global legend
+    plt.figlegend(handles=handles, loc="center", fontsize="large",
+                  bbox_to_anchor=(0.6/n, 1 - 0.6/n))
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
-        fig.savefig(os.path.join(plots_dir,
-                                 f"comparecast_cs_{n}x{n}_{score_name}.pdf"))
+        fig.savefig(
+            os.path.join(plots_dir, f"comparecast_cs_{n}x{n}_{score_name}.{savefig_ext}"),
+            dpi=savefig_dpi,
+            transparent=True,
+        )
 
     return axes
 
@@ -680,6 +726,7 @@ def plot_ucbs(
         save_filename: str = "confseq_ucbs.pdf",
         figsize: Tuple[int, int] = (8, 5),
         linewidth: int = 2,
+        savefig_dpi: float = 300,
         **plot_kwargs
 ):
     """Plot the UCBs of multiple confidence sequences across time.
@@ -711,7 +758,7 @@ def plot_ucbs(
     plt.tight_layout()
     if save_filename is not None:
         os.makedirs(os.path.dirname(save_filename), exist_ok=True)
-        plt.savefig(save_filename)
+        plt.savefig(save_filename, dpi=savefig_dpi, transparent=True)
 
 
 def plot_mlb_forecasts(
@@ -724,10 +771,11 @@ def plot_mlb_forecasts(
         colors: List = get_colors(),
         n_games: int = None,
         save_filename: str = None,
+        savefig_dpi: float = 300,
 ):
     """Plotting function for MLB forecasts."""
     set_theme()
-    plt.figure(figsize=(15, 5), facecolor="white")
+    plt.figure(figsize=(12, 5), facecolor="white")
     filtered_data = data[data.season.isin(years)]
     if len(years) == 1 and n_games is not None:
         filtered_data = filtered_data.tail(n_games)
@@ -738,7 +786,9 @@ def plot_mlb_forecasts(
         "time", var_name="forecasts", value_name="probability")
     sns.set_palette(colors)
     ax = sns.lineplot(x="time", y="probability",
-                      hue="forecasts", linewidth=2, alpha=0.7, data=df)
+                      hue="forecasts", style="forecasts",
+                      hue_order=forecasters,
+                      linewidth=2, alpha=0.9, data=df)
     sns.scatterplot(x="time", y="win", color=COLORS["y"],
                     data=filtered_data, ax=ax)
 
@@ -768,18 +818,19 @@ def plot_mlb_forecasts(
         f"{team} Team Win Probability Forecasts" +
         (f" (regular seasons only)" if no_playoffs else " (gray: playoffs)"),
     )
-    ax.legend(loc="lower left", fontsize="small")
+    ax.legend(loc="lower left", fontsize="small", ncol=2)
     plt.tight_layout()
 
     if save_filename is not None:
         os.makedirs(os.path.dirname(save_filename), exist_ok=True)
-        plt.savefig(save_filename)
+        plt.savefig(save_filename, dpi=savefig_dpi, transparent=True)
 
 
 def plot_weather_hz_evalues(
         evalues: pd.DataFrame,
         use_preset_theme: bool = True,
         save_filename: str = None,
+        savefig_dpi: float = 300,
         **theme_kwargs,
 ):
     """Reproduces Figure 3 from Henzi & Ziegel (2021).
@@ -807,12 +858,12 @@ def plot_weather_hz_evalues(
             yscale="log",
             ylim=(1e-2, 1e4)
         )
-        ax.axhline(y=1, linewidth=2, linestyle="-", color="black")
-        ax.axhline(y=20, linewidth=2, linestyle="--", color="gray")
+        ax.axhline(y=1, linewidth=1.5, linestyle="solid", color="black")
+        ax.axhline(y=20, linewidth=1.5, linestyle="dotted", color="gray")
 
     if save_filename is not None:
         os.makedirs(os.path.dirname(save_filename), exist_ok=True)
-        plt.savefig(save_filename)
+        plt.savefig(save_filename, dpi=savefig_dpi, transparent=True)
 
 
 def plot_weather_comparison(
@@ -832,6 +883,8 @@ def plot_weather_comparison(
         plots_dir: str = "./plots/weather",
         use_preset_theme: bool = True,
         ylim_scale: float = 0.05,
+        savefig_ext: str = "pdf",
+        savefig_dpi: float = 300,
         **theme_kwargs,
 ):
     """Produces CS and e-value plots for the weather forecast comparison.
@@ -966,8 +1019,12 @@ def plot_weather_comparison(
 
         if plots_dir:
             os.makedirs(plots_dir, exist_ok=True)
-            plt.savefig(os.path.join(plots_dir, f"comparecast_cs_lag{lag}.pdf"),
-                        bbox_inches="tight", transparent=True)
+            plt.savefig(
+                os.path.join(plots_dir, f"comparecast_cs_lag{lag}.{savefig_ext}"),
+                dpi=savefig_dpi,
+                bbox_inches="tight",
+                transparent=True,
+            )
 
     # Plot 2: e-processes
     fg = sns.relplot(
@@ -999,14 +1056,17 @@ def plot_weather_comparison(
             yscale="log",
             ylim=(1e-2, 1e4),
         )
-        ax.axhline(y=1, linewidth=2, linestyle="-", color="black")
-        ax.axhline(y=2/alpha, linewidth=2, linestyle="--", color="gray")
+        ax.axhline(y=1, linewidth=1.5, linestyle="solid", color="black")
+        ax.axhline(y=2/alpha, linewidth=1.5, linestyle="dotted", color="gray")
 
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
         evalue_type = "hz" if use_hz else lagged_null
         plt.savefig(
-            os.path.join(plots_dir, f"comparecast_evalues_{evalue_type}_lag{lag}.pdf"),
-            bbox_inches="tight", transparent=True)
+            os.path.join(plots_dir, f"comparecast_evalues_{evalue_type}_lag{lag}.{savefig_ext}"),
+            dpi=savefig_dpi,
+            bbox_inches="tight",
+            transparent=True,
+        )
 
     return results
