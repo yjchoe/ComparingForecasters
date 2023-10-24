@@ -14,7 +14,7 @@ This accompanying package, named `comparecast`, includes implementations of:
 
 Confidence sequences can be continuously monitored without having to worry about "sampling to a foregone conclusion," which happens when using a standard, fixed-time confidence interval and repeatedly peeking at the data.
 E-processes also allow peeking at the data before deciding when to stop the experiment ("anytime-valid").
-See [here](https://arxiv.org/abs/2210.01948) for an overview of these methods.
+See [here](https://arxiv.org/abs/2210.01948) for an overview of these methods, or [here](https://github.com/gostevehoward/confseq) for a standalone implementation of confidence sequences.
 
 In the plot below, we plot the 95% (empirical-Bernstein) CS and its corresponding e-processes (one for each forecaster) for
 comparing the probability forecasts of [_FiveThirtyEight_](https://github.com/fivethirtyeight/data/tree/master/mlb-elo/) and [Vegas odds](https://sports-statistics.com/sports-data/mlb-historical-odds-scores-datasets/) 
@@ -174,7 +174,7 @@ Text:
 > Choe, Y. J., & Ramdas, A. (2023). Comparing sequential forecasters. _Operations Research_. https://doi.org/10.1287/opre.2021.0792
 
 BibTeX:
-```
+```bibtex
 @article{choe2023comparing,
   title={Comparing sequential forecasters},
   author={Choe, Yo Joong and Ramdas, Aaditya},
