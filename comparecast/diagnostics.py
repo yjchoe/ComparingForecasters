@@ -123,8 +123,8 @@ def compute_diagnostics(
 
     if boundary_type != "stitching":
         logging.warning(
-            f"miscoverage rate calculation may take too much time "
-            f"for boundary type {boundary_type}")
+            f"miscoverage rate calculation may be slow"
+            f" for boundary type {boundary_type}")
 
     ps, qs, ys, true_probs = [
         data[name].values

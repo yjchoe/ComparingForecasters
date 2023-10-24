@@ -45,8 +45,8 @@ def gamma_exponential_log_mixture(
             # third term could still become small v_rho_csq grows large.
             leading_constant
             + loggamma(v_rho_csq)
-            + np.log(gammainc(v_rho_csq, np.maximum(1e-8, cs_v_rho_csq)))
-            - v_rho_csq * np.log(np.maximum(1e-8, cs_v_rho_csq))
+            + np.log(gammainc(v_rho_csq, np.maximum(1e-8, cs_v_rho_csq)), where=cs_v_rho_csq > 0)
+            - v_rho_csq * np.log(cs_v_rho_csq, where=cs_v_rho_csq > 0)
             + cs_v_csq
         ),
         leading_constant - rho_csq - np.log(v_rho_csq)  # upper bound (App. D)
