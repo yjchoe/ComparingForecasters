@@ -22,7 +22,7 @@ on all Major League Baseball games from 2010 to 2019.
 The average [Brier score](https://en.wikipedia.org/wiki/Brier_score) slightly favors Vegas odds over time, 
 and the CS closely tracks this average score and represents the uncertainty in estimating the score while accounting for the randomness of data.
 
-![](./plots/mlb_2010_2019/comparecast_cs_fivethirtyeight_vegas_BrierScore.png "MLB-538-Vegas-Brier")
+![](https://raw.githubusercontent.com/yjchoe/ComparingForecasters/dev/plots/mlb_2010_2019/comparecast_cs_fivethirtyeight_vegas_BrierScore.png "MLB-538-Vegas-Brier")
 
 See [`nb_comparecast_baseball.ipynb`](nb_comparecast_baseball.ipynb) for the code that generated this plot.
 
@@ -56,6 +56,10 @@ See [`data/README.md`](data/README.md).
 Also see experiment notebooks below.
 
 ### Python
+
+The following sample code generates some simulated data and forecasters.
+Then, it computes the CS and the e-processes for comparing two of these forecasters, 
+and saves the relevant plots inside the `plots/test` directory.
 
 ```python
 import comparecast as cc
@@ -103,6 +107,9 @@ results, axes = cc.plot_comparison(
 ```
 
 ### Command Line Interface
+
+(Clone this repo first.)
+
 ```shell
 # Generate synthetic data and forecasts
 python3 forecast.py -d default -n 1000 -f all \
